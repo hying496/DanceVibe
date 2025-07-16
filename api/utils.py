@@ -54,6 +54,7 @@ def decode_base64_image(image_data: str) -> Optional[np.ndarray]:
         return None
 
 
+
 def encode_image_to_base64(image: np.ndarray, format: str = 'jpeg', quality: int = 80) -> str:
     """
     将图片编码为base64格式

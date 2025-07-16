@@ -9,6 +9,7 @@ import os
 from typing import Dict, List, Optional
 import sys
 import traceback
+import asyncio
 
 # 添加项目根路径到sys.path
 from pathlib import Path
@@ -20,6 +21,15 @@ sys.path.append(str(project_root / 'score'))
 
 from api.model import Keypoint, Landmarks
 from api.utils import decode_base64_image, encode_image_to_base64, pad_landmarks, draw_landmarks
+
+# 导入障碍物管理 - 使用try-except避免导入错误
+try:
+    from extra_obstacles import ObstacleManager
+    print("✅ 障碍物管理器导入成功")
+    obstacle_available = True
+except ImportError as e:
+    print(f"⚠️ 障碍物管理器导入失败: {e}")
+    obstacle_available = False
 
 # 强制导入所有必要的模块
 print("🔄 正在导入必要模块...")
@@ -95,6 +105,29 @@ if not score_available:
             self.scores = []
             self.average = 0.0
 
+if not obstacle_available:
+    print("⚠️ 使用备用障碍物管理器")
+    
+    class ObstacleManager:
+        def __init__(self, frame_size=(640, 480)):
+            self.frame_width, self.frame_height = frame_size
+            self.active_obstacles = []
+            
+        def spawn_obstacle(self):
+            return None
+            
+        def update_obstacles(self):
+            return []
+            
+        def check_collision(self, obstacle, landmarks):
+            return None
+            
+        def deactivate_obstacle(self, obstacle_id):
+            pass
+            
+        def reset(self):
+            self.active_obstacles = []
+
 ws_router = APIRouter()
 
 
@@ -106,19 +139,23 @@ class PersonScoreTracker:
         self.person_id = person_id
         self.cumulative_score = CumulativeScore()
         self.score_history = []
+        self.obstacle_score = 0  # 障碍得分
         self.current_scores = {
             'similarity': 0.0,
             'pose_score': 0.0,
             'rhythm_score': 0.0,
             'total_score': 0.0,
+            'obstacle_score': 0.0,
             'avg_score': 0.0
         }
 
-    def update_scores(self, similarity, pose_score, rhythm_score, total_score):
+    def update_scores(self, similarity, pose_score, rhythm_score, total_score, obstacle_score=0):
         self.current_scores['similarity'] = similarity
         self.current_scores['pose_score'] = pose_score
         self.current_scores['rhythm_score'] = rhythm_score
         self.current_scores['total_score'] = total_score
+        self.current_scores['obstacle_score'] = obstacle_score
+        self.obstacle_score = obstacle_score
 
         if total_score > 0:
             self.cumulative_score.update(total_score)
@@ -156,8 +193,11 @@ class GameSession:
         
         # 多人评分追踪
         self.person_trackers: Dict[int, PersonScoreTracker] = {}
-        self.cumulative_score = CumulativeScore()  # 保留整体分数
+        self.cumulative_score = CumulativeScore()
         self.score_history: List[float] = []
+        
+        # 障碍物管理器
+        self.obstacle_manager = ObstacleManager(frame_size=(640, 480))
 
 
 # 连接管理
@@ -220,22 +260,25 @@ async def handle_message(msg: Dict, websocket: WebSocket, session: GameSession):
 
 
 async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
-    """处理视频帧 - 根据帧类型选择不同的检测器实例"""
+    """处理视频帧 - 回到同步处理方式"""
     frame_type = msg.get('frame_type', 'webcam')
     image_data = msg.get('image', '')
     current_time = msg.get('current_time', 0.0)
+
+    print(f"🎬 处理{frame_type}帧")
+
+    if not image_data:
+        print("❌ 图片数据为空")
+        return
 
     # 根据帧类型选择不同的检测器实例
     if frame_type == 'reference':
         pose_manager = session.pose_manager_reference
     else:
         pose_manager = session.pose_manager_webcam
-    
-    print(f"🔍 使用检测器: {id(pose_manager)} ({frame_type})")
-    print(f"🎬 处理{frame_type}帧")
 
-    if not image_data or not pose_manager:
-        print("❌ 图片数据为空或检测器未初始化")
+    if not pose_manager:
+        print("❌ 检测器未初始化")
         return
 
     try:
@@ -248,6 +291,10 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
         height, width = frame.shape[:2]
         print(f"✅ 图片解码成功，尺寸: {frame.shape}")
 
+        # 摄像头webcam帧做水平镜像
+        if frame_type == 'webcam':
+            frame = cv2.flip(frame, 1)
+
         # 姿态检测
         start_time = time.time()
         persons, det_info = pose_manager.detect_poses(frame)
@@ -255,9 +302,8 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
 
         print(f"🔍 姿态检测完成，检测到 {len(persons) if persons else 0} 人")
 
-        # === 实现main.py的逻辑：左侧只保留主舞者，右侧保留所有人 ===
+        # 参考视频：只保留距离中心最近的主舞者
         if frame_type == 'reference' and persons:
-            # 参考视频：只保留距离中心最近的主舞者
             def get_center_distance(person):
                 if not person.keypoints:
                     return float('inf')
@@ -270,9 +316,8 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
                 return (px - cx) ** 2 + (py - cy) ** 2
 
             main_person = min(persons, key=get_center_distance)
-            persons = [main_person]  # 只保留主舞者
-            main_person.id = 0  # 给主舞者固定ID
-            print("📹 参考视频：选择主舞者")
+            persons = [main_person]
+            main_person.id = 0
 
         # 提取关键点
         all_landmarks = []
@@ -289,18 +334,16 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
                     ))
                 landmarks = pad_landmarks(kps, 33)
                 all_landmarks.append(landmarks)
-                print(f"✅ 提取关键点完成，Person {getattr(person, 'id', 0)}: {len(landmarks)}个点")
 
         # 绘制姿态
         vis_frame = frame.copy()
         if all_landmarks:
-            # 为不同的人使用不同颜色
             colors = [(0, 255, 0), (255, 0, 0), (0, 0, 255), (255, 255, 0), (0, 255, 255), (255, 0, 255)]
             for i, landmarks in enumerate(all_landmarks):
                 color = colors[i % len(colors)]
                 vis_frame = draw_landmarks(vis_frame, landmarks, color=color)
 
-        # 如果是参考视频，添加"Main Dancer"标注
+        # 如果是参考视频，添加标注
         if frame_type == 'reference' and all_landmarks:
             cv2.putText(vis_frame, "Main Dancer", (50, 50),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
@@ -319,13 +362,13 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
 
         # 处理参考帧
         if frame_type == 'reference' and all_landmarks:
-            session.reference_landmarks = all_landmarks[0]  # 主舞者的关键点
+            session.reference_landmarks = all_landmarks[0]
             print(f"📹 参考视频主舞者关键点已保存")
 
-        # 处理用户帧并计算多人分数
+        # 处理用户帧并计算多人分数 + 障碍物
         elif frame_type == 'webcam' and session.reference_landmarks and all_landmarks:
-            print(f"🎯 开始计算多人分数，共{len(all_landmarks)}人")
-            await calculate_multi_person_scores(all_landmarks, current_time, websocket, session, persons)
+            print(f"🎯 开始计算多人分数+障碍物，共{len(all_landmarks)}人")
+            await calculate_multi_person_scores_with_obstacles(all_landmarks, current_time, websocket, session, persons)
 
     except Exception as e:
         print(f"❌ 帧处理错误: {e}")
@@ -336,15 +379,35 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
         })
 
 
-async def calculate_multi_person_scores(all_landmarks: List[List[Keypoint]], current_time: float,
-                                        websocket: WebSocket, session: GameSession, persons):
-    """计算多人分数 - 实现main.py的多人评分逻辑"""
+async def calculate_multi_person_scores_with_obstacles(all_landmarks: List[List[Keypoint]], current_time: float,
+                                                     websocket: WebSocket, session: GameSession, persons):
+    """计算多人分数 + 障碍物检测"""
     if not session.game_started or session.game_paused:
         return
 
     try:
-        # 处理每个人的分数
+        # 1. 更新障碍物状态
+        obstacles = session.obstacle_manager.update_obstacles()
+        
+        # 2. 尝试生成新障碍物
+        new_obstacle = session.obstacle_manager.spawn_obstacle()
+        if new_obstacle:
+            print(f"🎯 生成新障碍物: {new_obstacle['id']}")
+            await websocket.send_json({
+                'event': 'obstacle_spawn',
+                'obstacle': new_obstacle
+            })
+
+        # 3. 发送障碍物更新
+        if obstacles:
+            await websocket.send_json({
+                'event': 'obstacle_update',
+                'obstacles': obstacles
+            })
+
+        # 4. 处理每个人的分数
         person_scores = {}
+        total_obstacle_score = 0
 
         for i, user_landmarks in enumerate(all_landmarks):
             person_id = getattr(persons[i], 'id', i) if i < len(persons) else i
@@ -352,23 +415,48 @@ async def calculate_multi_person_scores(all_landmarks: List[List[Keypoint]], cur
             # 为新人创建tracker
             if person_id not in session.person_trackers:
                 session.person_trackers[person_id] = PersonScoreTracker(person_id)
-                print(f"🆕 创建新的人员追踪器: ID {person_id}")
 
-            # 计算该人的分数
+            # 计算基础分数
             try:
                 pose_score = calculate_pose_similarity(session.reference_landmarks, user_landmarks) or 0.0
 
                 # 计算节奏分数
                 rhythm_score = 0.0
-                delta_t = 1.0
                 if session.beat_times and session.start_time:
                     relative_time = current_time - (time.time() - session.start_time)
                     if session.beat_times:
                         delta_t = min([abs(relative_time - bt) for bt in session.beat_times])
                         rhythm_score = max(0, 1 - delta_t / 0.4)
 
-                # 手势分数（简化版）
+                # 手势分数
                 hand_score = pose_score * 0.8
+
+                # 5. 障碍物碰撞检测
+                obstacle_score_change = 0
+                for obstacle in obstacles:
+                    if obstacle.get('active', True):
+                        collision_result = session.obstacle_manager.check_collision(obstacle, user_landmarks)
+                        if collision_result:
+                            obstacle_score_change += collision_result['score_change']
+                            
+                            print(f"🎯 Person {person_id} 障碍物碰撞: {collision_result['result']}, 分数变化: {collision_result['score_change']}")
+                            
+                            # 发送障碍物得分事件
+                            await websocket.send_json({
+                                'event': 'obstacle_score',
+                                'person_id': person_id,
+                                'result': collision_result['result'],
+                                'score_change': collision_result['score_change'],
+                                'display': collision_result['display']
+                            })
+                            
+                            # 禁用已碰撞的障碍物
+                            session.obstacle_manager.deactivate_obstacle(obstacle['id'])
+
+                # 更新总障碍得分
+                tracker = session.person_trackers[person_id]
+                tracker.obstacle_score += obstacle_score_change
+                total_obstacle_score += tracker.obstacle_score
 
                 # 难度权重
                 LEVEL_WEIGHTS = {
@@ -381,12 +469,8 @@ async def calculate_multi_person_scores(all_landmarks: List[List[Keypoint]], cur
                 total_score = w_pose * pose_score + w_rhythm * rhythm_score + w_hand * hand_score
 
                 # 更新该人的分数
-                tracker = session.person_trackers[person_id]
-                tracker.update_scores(pose_score, pose_score, rhythm_score, total_score)
-
+                tracker.update_scores(pose_score, pose_score, rhythm_score, total_score, tracker.obstacle_score)
                 person_scores[person_id] = tracker.current_scores
-
-                print(f"📊 Person {person_id}: 姿态={pose_score:.2f}, 节奏={rhythm_score:.2f}, 总分={total_score:.2f}")
 
             except Exception as e:
                 print(f"❌ Person {person_id} 分数计算错误: {e}")
@@ -397,9 +481,8 @@ async def calculate_multi_person_scores(all_landmarks: List[List[Keypoint]], cur
         inactive_ids = set(session.person_trackers.keys()) - active_person_ids
         for person_id in inactive_ids:
             del session.person_trackers[person_id]
-            print(f"🗑️ 清理不活跃的人员: ID {person_id}")
 
-        # 计算整体平均分数（用于顶部显示）
+        # 计算整体平均分数
         if person_scores:
             all_total_scores = [scores['total_score'] for scores in person_scores.values()]
             avg_total_score = sum(all_total_scores) / len(all_total_scores)
@@ -410,12 +493,13 @@ async def calculate_multi_person_scores(all_landmarks: List[List[Keypoint]], cur
         # 发送多人分数更新
         await websocket.send_json({
             'event': 'score_update',
-            'person_scores': person_scores,  # 新增：每个人的分数
-            'current_scores': {  # 主要显示（第一个人或平均）
+            'person_scores': person_scores,
+            'current_scores': {
                 'pose_score': round(list(person_scores.values())[0]['pose_score'] * 100, 2) if person_scores else 0,
                 'rhythm_score': round(list(person_scores.values())[0]['rhythm_score'] * 100, 2) if person_scores else 0,
                 'hand_score': round(list(person_scores.values())[0]['rhythm_score'] * 80, 2) if person_scores else 0,
-                'total_score': round(list(person_scores.values())[0]['total_score'] * 100, 2) if person_scores else 0
+                'total_score': round(list(person_scores.values())[0]['total_score'] * 100, 2) if person_scores else 0,
+                'obstacle_score': total_obstacle_score
             },
             'average_score': round(session.cumulative_score.average * 100, 2),
             'frame_count': session.frame_count,
@@ -427,7 +511,7 @@ async def calculate_multi_person_scores(all_landmarks: List[List[Keypoint]], cur
             await handle_stop_game(websocket, session)
 
     except Exception as e:
-        print(f"❌ 多人分数计算错误: {e}")
+        print(f"❌ 多人分数+障碍物计算错误: {e}")
         traceback.print_exc()
 
 
@@ -502,7 +586,10 @@ async def handle_start_game(msg: Dict, websocket: WebSocket, session: GameSessio
     session.frame_count = 0
     session.score_history = []
     session.cumulative_score.reset()
-    session.person_trackers.clear()  # 清理之前的人员追踪器
+    session.person_trackers.clear()
+    
+    # 重置障碍物管理器
+    session.obstacle_manager.reset()
 
     await websocket.send_json({
         'event': 'game_started',
@@ -532,6 +619,9 @@ async def handle_stop_game(websocket: WebSocket, session: GameSession):
 
     session.game_started = False
     session.game_paused = False
+    
+    # 重置障碍物管理器
+    session.obstacle_manager.reset()
 
     await websocket.send_json({
         'event': 'game_stopped',

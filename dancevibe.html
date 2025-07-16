@@ -6,6 +6,7 @@
     <title>DanceVibe - 舞动青春</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
+        /* 保持原有的所有CSS样式 */
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 
         * {
@@ -220,7 +221,7 @@
             border-radius: 12px;
         }
 
-        /* 障碍框显示 */
+        /* 优化后的障碍框显示 */
         .obstacle-container {
             position: absolute;
             top: 0;
@@ -245,22 +246,44 @@
             transition: all 0.3s ease;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
             flex-direction: column;
+            backdrop-filter: blur(5px);
         }
 
         .obstacle-box.reward {
             border-color: #4CAF50;
-            background: linear-gradient(45deg, rgba(76, 175, 80, 0.3), rgba(76, 175, 80, 0.6));
+            background: linear-gradient(45deg, rgba(76, 175, 80, 0.4), rgba(76, 175, 80, 0.7));
             animation: pulseReward 2s infinite;
         }
 
         .obstacle-box.penalty {
             border-color: #F44336;
-            background: linear-gradient(45deg, rgba(244, 67, 54, 0.3), rgba(244, 67, 54, 0.6));
+            background: linear-gradient(45deg, rgba(244, 67, 54, 0.4), rgba(244, 67, 54, 0.7));
             animation: shakePenalty 1s infinite;
         }
 
         .obstacle-box.blinking {
             animation: blink 0.5s infinite;
+        }
+
+        .obstacle-box .obstacle-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .obstacle-box .obstacle-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            opacity: 0.9;
+        }
+
+        .obstacle-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 0 0 8px 8px;
+            transition: width 0.3s ease;
         }
 
         @keyframes pulseReward {
@@ -819,10 +842,14 @@
                 <!-- 参考视频 -->
                 <div class="video-container">
                     <div class="video-header">
-                        <h3 class="video-title">
+                        <h3 class="video-title" style="display:inline-block;vertical-align:middle;">
                             <i class="fas fa-play-circle"></i> 参考视频
                         </h3>
-                        <span class="video-badge connected" id="selectedDanceName">请选择舞蹈</span>
+                        <span class="video-badge connected" id="selectedDanceName" style="margin-left:auto; margin-right: 8px;">请选择舞蹈</span>
+                        <!-- 声音开关按钮 -->
+                        <button id="referenceSoundBtn" style="background:none;border:none;outline:none;cursor:pointer;margin-right:8px;font-size:1.2rem;" title="切换声音">
+                            <i id="referenceSoundIcon" class="fas fa-volume-mute"></i>
+                        </button>
                     </div>
 
                     <div class="video-frame">
@@ -1362,7 +1389,7 @@
             playScoreSound(result);
         }
 
-        // 渲染障碍物
+        // 渲染障碍物 - 优化版本
         function renderObstacles() {
             const container = elements.obstacleContainer;
             if (!container) return;
@@ -1370,7 +1397,7 @@
             container.innerHTML = '';
             
             Object.values(obstacles).forEach(obs => {
-                const {position, size, pattern, blinking, progress} = obs;
+                const { position, size, pattern, blinking, progress } = obs;
                 const [x, y] = position;
                 const [w, h] = size;
                 
@@ -1382,49 +1409,36 @@
                 div.style.width = w + 'px';
                 div.style.height = h + 'px';
                 
-                // 设置内容
-                if (pattern.type === 'reward') {
-                    div.innerHTML = `
-                        <div style="font-size: 1.5rem;">🎯</div>
-                        <div style="font-size: 0.8rem;">TARGET</div>
-                    `;
-                } else if (pattern.type === 'penalty') {
-                    div.innerHTML = `
-                        <div style="font-size: 1.5rem;">⚠️</div>
-                        <div style="font-size: 0.8rem;">AVOID</div>
-                    `;
-                }
+                // 创建图标和标签
+                const icon = document.createElement('div');
+                icon.className = 'obstacle-icon';
+                icon.textContent = pattern.icon;
+                
+                const label = document.createElement('div');
+                label.className = 'obstacle-label';
+                label.textContent = pattern.description;
+                
+                div.appendChild(icon);
+                div.appendChild(label);
                 
                 // 添加进度条
                 const progressBar = document.createElement('div');
-                progressBar.style.cssText = `
-                    position: absolute;
-                    left: 0;
-                    bottom: 0;
-                    height: 4px;
-                    width: ${((1 - (progress || 0)) * 100)}%;
-                    background: ${pattern.type === 'reward' ? '#4CAF50' : '#F44336'};
-                    opacity: 0.7;
-                    border-radius: 0 0 8px 8px;
-                    transition: width 0.3s ease;
-                `;
+                progressBar.className = 'obstacle-progress';
+                progressBar.style.width = `${((1 - (progress || 0)) * 100)}%`;
                 div.appendChild(progressBar);
                 
                 container.appendChild(div);
             });
         }
 
-        // 显示分数变化效果
+        // 显示分数变化效果 - 优化版本
         function showScoreChangeEffect(display) {
             const container = elements.scoreChangeContainer;
             if (!container) return;
 
             const effect = document.createElement('div');
             effect.className = 'score-change';
-            effect.textContent = `${display.icon || ''} ${display.text || ''}`;
-            
-            // 设置样式
-            effect.style.color = display.color || '#333';
+            effect.innerHTML = `<span>${display.icon || ''}</span> ${display.text || ''}`;
             
             // 根据分数变化类型设置CSS类
             if (display.text && display.text.includes('+')) {
@@ -1497,7 +1511,7 @@
                         width: { ideal: 640 },
                         height: { ideal: 480 },
                         facingMode: 'user',
-                        frameRate: { ideal: 10, max: 15 }  // 限制帧率
+                        frameRate: { ideal: 15, max: 20 }  // 提高帧率
                     }
                 });
 
@@ -1557,7 +1571,7 @@
             const ctx = canvas.getContext('2d');
             
             let lastCaptureTime = 0;
-            const captureInterval = 100; // 100ms间隔，约10FPS
+            const captureInterval = 66; // 约15FPS，优化性能
 
             const captureFrame = () => {
                 if (!appState.cameraReady || !appState.wsConnected || !elements.userVideo) {
@@ -1598,7 +1612,7 @@
                             };
                             reader.readAsDataURL(blob);
                         }
-                    }, 'image/jpeg', 0.6);  // 降低质量以提高性能
+                    }, 'image/jpeg', 0.7);  // 提高质量
                 } catch (err) {
                     console.error('帧捕获错误:', err);
                 }
@@ -1620,6 +1634,9 @@
             elements.startReferenceBtn.addEventListener('click', startReferenceVideo);
             elements.stopReferenceBtn.addEventListener('click', stopReferenceVideo);
             elements.toggleReferenceBtn.addEventListener('click', toggleReferenceVisible);
+
+            // 参考视频声音开关
+            document.getElementById('referenceSoundBtn').addEventListener('click', toggleReferenceSound);
 
             // 摄像头控制
             elements.retryCamera.addEventListener('click', () => {
@@ -1757,14 +1774,18 @@
                         };
                         reader.readAsDataURL(blob);
                     }
-                }, 'image/jpeg', 0.6);
-            }, 100); // 约10fps
+                }, 'image/jpeg', 0.7);
+            }, 100); // 10fps
         }
 
         // 游戏控制函数
         function startGame() {
-            if (!appState.wsConnected || !appState.selectedDance.id) return;
-            
+            if (!appState.wsConnected) return;
+            // 1. 必须选择舞蹈难度
+            if (!appState.selectedDance || !appState.selectedDance.id) {
+                alert('请选择舞蹈难度！');
+                return;
+            }
             if (!appState.cameraReady) {
                 initCamera(() => {
                     showCountdown();
@@ -1961,8 +1982,23 @@
             totalScoreTimer = setInterval(updateTotalScoreMacaron, 1000);
         }
 
+        // 参考视频声音开关
+        let referenceMuted = true;
+        function toggleReferenceSound() {
+            referenceMuted = !referenceMuted;
+            elements.referenceVideo.muted = referenceMuted;
+            const icon = document.getElementById('referenceSoundIcon');
+            if (referenceMuted) {
+                icon.className = 'fas fa-volume-mute';
+            } else {
+                icon.className = 'fas fa-volume-up';
+            }
+        }
+
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', initApp);
+        // 默认参考视频静音
+        elements.referenceVideo.muted = true;
     </script>
 </body>
 </html>
