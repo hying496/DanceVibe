@@ -1,0 +1,17 @@
+class CumulativeScore:
+    """
+    实时累计平均相似度计算器。
+    只保存累计和与帧数，内存占用极低。
+    """
+    def __init__(self):
+        self.n = 0
+        self.sum_score = 0.0
+
+    def update(self, score):
+        if score is not None:
+            self.n += 1
+            self.sum_score += score
+
+    @property
+    def average(self):
+        return self.sum_score / self.n if self.n > 0 else None
