@@ -221,6 +221,11 @@
             border-radius: 12px;
         }
 
+        /* 摄像头画面镜像显示 */
+        #userVideo {
+            transform: scaleX(-1);
+        }
+
         /* 优化后的障碍框显示 */
         .obstacle-container {
             position: absolute;
@@ -1086,7 +1091,8 @@
             // 性能统计
             currentFPS: 0,
             latency: 0,
-            personsDetected: 0
+            personsDetected: 0,
+            showReferenceSkeleton: true // 新增：控制参考视频是否显示骨架
         };
 
         // 障碍物管理
@@ -1115,6 +1121,8 @@
             cameraStatus: document.getElementById('cameraStatus'),
             retryCamera: document.getElementById('retryCamera'),
             processedFrame: document.getElementById('processedFrame'),
+            // 新增：too close 提示容器
+            tooCloseTip: null,
 
             // 障碍相关
             obstacleContainer: document.getElementById('obstacleContainer'),
@@ -1161,6 +1169,47 @@
             playAgainBtn: document.getElementById('playAgainBtn'),
             closeResultBtn: document.getElementById('closeResultBtn')
         };
+
+        // 创建 too close 提示
+        function createTooCloseTip() {
+            if (!elements.tooCloseTip) {
+                const tip = document.createElement('div');
+                tip.id = 'tooCloseTip';
+                tip.textContent = 'Too Close!';
+                tip.style.position = 'absolute';
+                tip.style.top = '40%';
+                tip.style.left = '50%';
+                tip.style.transform = 'translate(-50%, -50%)';
+                tip.style.background = 'linear-gradient(135deg, #FFB5BA 0%, #B5E5CF 100%)';
+                tip.style.color = '#212529';
+                tip.style.fontWeight = 'bold';
+                tip.style.fontSize = '2rem';
+                tip.style.padding = '1.2rem 2.5rem';
+                tip.style.borderRadius = '2rem';
+                tip.style.boxShadow = '0 8px 32px rgba(255, 181, 186, 0.15)';
+                tip.style.zIndex = '100';
+                tip.style.display = 'none';
+                tip.style.textAlign = 'center';
+                tip.style.letterSpacing = '0.1em';
+                tip.style.userSelect = 'none';
+                // 马卡龙色系边框
+                tip.style.border = '3px solid #FFD4B5';
+                // 添加到摄像头 video-container
+                const webcamContainer = elements.userVideo.closest('.video-container');
+                if (webcamContainer) {
+                    webcamContainer.appendChild(tip);
+                    elements.tooCloseTip = tip;
+                }
+            }
+        }
+
+        // 显示/隐藏 too close 提示
+        function showTooCloseTip(show) {
+            createTooCloseTip();
+            if (elements.tooCloseTip) {
+                elements.tooCloseTip.style.display = show ? 'block' : 'none';
+            }
+        }
 
         // 初始化应用
         function initApp() {
@@ -1296,10 +1345,20 @@
         // 处理帧结果
         function handleFrameResult(data) {
             if (data.type === 'webcam') {
-                elements.processedFrame.src = data.image;
-                elements.processedFrame.style.display = 'block';
+                // 摄像头区域只显示原始视频流，不再显示骨架图像
+                // elements.processedFrame.src = data.image;
+                // elements.processedFrame.style.display = 'block';
+                // 只更新人数和延迟等性能数据
                 appState.personsDetected = data.persons_detected || 0;
                 appState.latency = data.processing_time_ms || 0;
+
+                // 检查关键点数量，若小于22则弹出提示
+                if (data.persons_detected > 0 && Array.isArray(data.persons_keypoints_count)) {
+                    const kpCount = data.persons_keypoints_count[0] || 0;
+                    showTooCloseTip(kpCount < 22);
+                } else {
+                    showTooCloseTip(false);
+                }
 
                 // 计算FPS
                 const now = performance.now();
@@ -1310,9 +1369,21 @@
 
                 updatePerformanceStats();
             } else if (data.type === 'reference') {
+                // 参考视频骨架和原视频互斥显示，由 toggleReferenceVisible 控制
                 elements.referenceFrame.src = data.image;
-                elements.referenceFrame.style.display = appState.referencePlaying ? 'block' : (appState.referenceVisible ? 'block' : 'none');
-                elements.referenceVideo.style.display = 'none';
+                // 只在显示骨架时展示 referenceFrame
+                if (appState.referencePlaying || appState.referenceVisible) {
+                    if (appState.showReferenceSkeleton !== false) {
+                        elements.referenceFrame.style.display = 'block';
+                        elements.referenceVideo.style.display = 'none';
+                    } else {
+                        elements.referenceFrame.style.display = 'none';
+                        elements.referenceVideo.style.display = 'block';
+                    }
+                } else {
+                    elements.referenceFrame.style.display = 'none';
+                    elements.referenceVideo.style.display = 'none';
+                }
                 appState.referenceDetected = data.persons_detected > 0;
                 updateStatusIndicators();
             }
@@ -1707,17 +1778,19 @@
         }
 
         function toggleReferenceVisible() {
-            appState.referenceVisible = !appState.referenceVisible;
+            appState.showReferenceSkeleton = !appState.showReferenceSkeleton;
             const toggleBtn = elements.toggleReferenceBtn;
             const span = toggleBtn.querySelector('span');
 
-            if (appState.referenceVisible) {
-                elements.referenceVideo.style.display = 'block';
+            if (appState.showReferenceSkeleton) {
+                // 显示骨架，隐藏原视频
                 elements.referenceFrame.style.display = 'block';
+                elements.referenceVideo.style.display = 'none';
                 span.textContent = '隐藏';
             } else {
-                elements.referenceVideo.style.display = 'none';
+                // 隐藏骨架，显示原视频
                 elements.referenceFrame.style.display = 'none';
+                elements.referenceVideo.style.display = 'block';
                 span.textContent = '显示';
             }
         }
@@ -1996,7 +2069,16 @@
         }
 
         // 页面加载完成后初始化
-        document.addEventListener('DOMContentLoaded', initApp);
+        document.addEventListener('DOMContentLoaded', () => {
+            appState.showReferenceSkeleton = true; // 默认显示骨架
+            initApp();
+            // 确保摄像头骨架检测图片永远不显示
+            if (elements.processedFrame) {
+                elements.processedFrame.style.display = 'none';
+            }
+            // 初始化 too close 提示
+            createTooCloseTip();
+        });
         // 默认参考视频静音
         elements.referenceVideo.muted = true;
     </script>

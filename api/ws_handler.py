@@ -358,6 +358,10 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
             'image': vis_img_b64,
             'persons_detected': len(persons) if persons else 0,
             'processing_time_ms': processing_time,
+            'persons_keypoints_count': [
+                sum(1 for kp in landmarks if getattr(kp, 'visible', True))
+                for landmarks in all_landmarks
+            ] if all_landmarks else []
         })
 
         # 处理参考帧
