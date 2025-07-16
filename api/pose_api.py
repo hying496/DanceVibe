@@ -15,8 +15,7 @@ from detector.pose_detector import DetectorType, PoseDetectionManager
 
 router = APIRouter()
 
-# 全局姿态检测管理器
-pose_manager = PoseDetectionManager(DetectorType.MEDIAPIPE)
+# 移除全局检测器实例，每次请求创建新的检测器实例
 
 
 class ImageRequest(BaseModel):
@@ -49,10 +48,9 @@ async def detect_pose(req: ImageRequest):
         elif req.detector_type.lower() == "hybrid":
             detector_type = DetectorType.HYBRID
 
-        # 如果检测器类型改变，重新初始化
-        global pose_manager
-        if pose_manager.detector_type != detector_type:
-            pose_manager = PoseDetectionManager(detector_type)
+        # 每次请求创建新的检测器实例
+        pose_manager = PoseDetectionManager(detector_type)
+        print(f"🔍 API检测器创建: {id(pose_manager)} (类型: {detector_type.value})")
 
         # 进行姿态检测
         persons, det_info = pose_manager.detect_poses(frame)
@@ -149,7 +147,7 @@ async def health_check():
     """
     return {
         "status": "healthy",
-        "detector_type": pose_manager.detector_type.value,
+        "detector_available": True,
         "timestamp": time.time()
     }
 
@@ -160,20 +158,19 @@ async def get_detector_info():
     获取检测器信息
     """
     return {
-        "current_detector": pose_manager.detector_type.value,
         "available_detectors": [dt.value for dt in DetectorType],
-        "version": "1.0.0"
+        "default_detector": DetectorType.MEDIAPIPE.value,
+        "version": "1.0.0",
+        "note": "每次请求创建新的检测器实例，避免冲突"
     }
 
 
-@router.post('/switch_detector')
-async def switch_detector(detector_type: str):
+@router.post('/test_detector')
+async def test_detector(detector_type: str):
     """
-    切换检测器类型
+    测试检测器类型
     """
     try:
-        global pose_manager
-
         if detector_type.lower() == "mediapipe":
             new_type = DetectorType.MEDIAPIPE
         elif detector_type.lower() == "yolov8":
@@ -183,15 +180,16 @@ async def switch_detector(detector_type: str):
         else:
             raise HTTPException(status_code=400, detail="不支持的检测器类型")
 
-        pose_manager = PoseDetectionManager(new_type)
-
+        # 创建新检测器实例进行测试
+        test_manager = PoseDetectionManager(new_type)
+        
         return {
             "status": "success",
-            "new_detector": new_type.value,
-            "message": f"检测器已切换为: {new_type.value}"
+            "detector_type": new_type.value,
+            "detector_id": id(test_manager),
+            "message": f"检测器 {new_type.value} 测试成功"
         }
 
     except Exception as e:
-        print(f"检测器切换错误: {e}")
-        raise HTTPException(status_code=500, detail=f"检测器切换失败: {str(e)}")
-
+        print(f"检测器测试错误: {e}")
+        raise HTTPException(status_code=500, detail=f"检测器测试失败: {str(e)}")

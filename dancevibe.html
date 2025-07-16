@@ -191,7 +191,7 @@
 
         .video-frame {
             width: 100%;
-            height: 400px;
+            height: 500px;
             background: var(--light-gray);
             border-radius: 16px;
             display: flex;
@@ -218,6 +218,135 @@
             height: 100%;
             object-fit: cover;
             border-radius: 12px;
+        }
+
+        /* 障碍框显示 */
+        .obstacle-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .obstacle-box {
+            position: absolute;
+            border: 3px solid;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+            flex-direction: column;
+        }
+
+        .obstacle-box.reward {
+            border-color: #4CAF50;
+            background: linear-gradient(45deg, rgba(76, 175, 80, 0.3), rgba(76, 175, 80, 0.6));
+            animation: pulseReward 2s infinite;
+        }
+
+        .obstacle-box.penalty {
+            border-color: #F44336;
+            background: linear-gradient(45deg, rgba(244, 67, 54, 0.3), rgba(244, 67, 54, 0.6));
+            animation: shakePenalty 1s infinite;
+        }
+
+        .obstacle-box.blinking {
+            animation: blink 0.5s infinite;
+        }
+
+        @keyframes pulseReward {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(76, 175, 80, 0.3); }
+            50% { transform: scale(1.05); box-shadow: 0 0 30px rgba(76, 175, 80, 0.6); }
+        }
+
+        @keyframes shakePenalty {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-2px); }
+            75% { transform: translateX(2px); }
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* 分数变化动画 */
+        .score-change {
+            position: absolute;
+            font-size: 2rem;
+            font-weight: 700;
+            pointer-events: none;
+            z-index: 15;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .score-change.positive {
+            color: #4CAF50;
+            animation: scoreUp 2s ease-out forwards;
+        }
+
+        .score-change.negative {
+            color: #F44336;
+            animation: scoreDown 2s ease-out forwards;
+        }
+
+        .score-change.miss {
+            color: #9E9E9E;
+            animation: scoreMiss 1.5s ease-out forwards;
+        }
+
+        @keyframes scoreUp {
+            0% {
+                opacity: 0;
+                transform: translateY(0) scale(0.5);
+            }
+            20% {
+                opacity: 1;
+                transform: translateY(-20px) scale(1.2);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-60px) scale(1);
+            }
+        }
+
+        @keyframes scoreDown {
+            0% {
+                opacity: 0;
+                transform: translateY(0) scale(0.5);
+            }
+            20% {
+                opacity: 1;
+                transform: translateY(20px) scale(1.2);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(60px) scale(1);
+            }
+        }
+
+        @keyframes scoreMiss {
+            0% {
+                opacity: 0;
+                transform: scale(0.5);
+            }
+            50% {
+                opacity: 1;
+                transform: scale(1.1);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(1);
+            }
         }
 
         /* 参考视频控制 */
@@ -311,11 +440,6 @@
             background: var(--gradient-main);
             color: white;
             border-color: var(--macaron-pink);
-        }
-
-        .dance-option .emoji {
-            font-size: 2rem;
-            margin-bottom: 0.5rem;
         }
 
         .dance-option .name {
@@ -427,37 +551,24 @@
             transition: width 0.3s ease;
         }
 
-        /* 动作提示 */
-        .move-hint {
-            text-align: center;
-            background: var(--gradient-perfect);
-            border-radius: 16px;
-            padding: 1.5rem;
+        /* 障碍得分显示 */
+        .obstacle-score-display {
+            background: linear-gradient(135deg, var(--macaron-lavender), var(--macaron-sky));
             color: white;
-        }
-
-        .move-emoji {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            animation: bounce 1s infinite;
-        }
-
-        .move-name {
-            font-size: 1.3rem;
+            border-radius: 18px;
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
             font-weight: 600;
-            margin-bottom: 0.5rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            box-shadow: var(--shadow-card);
         }
 
-        .move-timer {
-            font-size: 2rem;
-            font-weight: 700;
-            opacity: 0.9;
-        }
-
-        @keyframes bounce {
-            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
-            40% { transform: translateY(-10px); }
-            60% { transform: translateY(-5px); }
+        .obstacle-score-display i {
+            font-size: 1.2rem;
         }
 
         /* 状态指示 */
@@ -491,6 +602,26 @@
             font-size: 0.8rem;
             color: var(--dark-gray);
             margin-top: 1rem;
+        }
+
+        .total-score-macaron {
+            background: var(--gradient-main);
+            color: var(--black);
+            border-radius: 18px;
+            padding: 0.5rem 1.2rem;
+            box-shadow: var(--shadow-card);
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .total-score-macaron i {
+            color: var(--macaron-lavender);
+            font-size: 1.5rem;
         }
 
         /* 倒计时 */
@@ -694,23 +825,6 @@
                         <span class="video-badge connected" id="selectedDanceName">请选择舞蹈</span>
                     </div>
 
-                    <!-- 参考视频控制按钮 -->
-                    <div class="reference-controls">
-                        <input type="file" accept="video/*" id="referenceInput" style="display:none">
-                        <button class="ref-btn open" id="openReferenceBtn">
-                            <i class="fas fa-folder-open"></i> 打开视频
-                        </button>
-                        <button class="ref-btn start" id="startReferenceBtn" disabled>
-                            <i class="fas fa-play"></i> 开始视频
-                        </button>
-                        <button class="ref-btn stop" id="stopReferenceBtn" disabled>
-                            <i class="fas fa-stop"></i> 停止视频
-                        </button>
-                        <button class="ref-btn toggle" id="toggleReferenceBtn" disabled>
-                            <i class="fas fa-eye"></i> <span>隐藏</span>
-                        </button>
-                    </div>
-
                     <div class="video-frame">
                         <div class="video-placeholder" id="referencePlaceholder">
                             <i class="fas fa-video"></i>
@@ -730,15 +844,32 @@
                         <div class="status-dot" id="referenceDetectedDot"></div>
                         <div class="status-dot" id="beatTimesLoadedDot"></div>
                     </div>
+
+                    <!-- 参考视频控制按钮 -->
+                    <div class="reference-controls">
+                        <input type="file" accept="video/*" id="referenceInput" style="display:none">
+                        <button class="ref-btn open" id="openReferenceBtn">
+                            <i class="fas fa-folder-open"></i> 打开视频
+                        </button>
+                        <button class="ref-btn start" id="startReferenceBtn" disabled>
+                            <i class="fas fa-play"></i> 播放
+                        </button>
+                        <button class="ref-btn stop" id="stopReferenceBtn" disabled>
+                            <i class="fas fa-stop"></i> 停止
+                        </button>
+                        <button class="ref-btn toggle" id="toggleReferenceBtn" disabled>
+                            <i class="fas fa-eye"></i> <span>隐藏</span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 用户摄像头 -->
                 <div class="video-container">
                     <div class="video-header">
                         <h3 class="video-title">
-                            <i class="fas fa-camera"></i> 你的表演
+                            <i class="fas fa-camera"></i> WebCam
                         </h3>
-                        <span class="video-badge" id="cameraStatus">未连接</span>
+                        <span class="video-badge" id="cameraStatus">Not Connected</span>
                     </div>
 
                     <div class="video-frame" style="position: relative;">
@@ -756,18 +887,39 @@
                         <!-- 处理后的姿态检测结果 -->
                         <img id="processedFrame" class="video-display" style="position: absolute; top: 0; left: 0; z-index: 2; display: none;" alt="处理后的视频">
 
+                        <!-- 障碍框容器 -->
+                        <div id="obstacleContainer" class="obstacle-container"></div>
+
+                        <!-- 分数变化效果容器 -->
+                        <div id="scoreChangeContainer" class="score-change-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;"></div>
+
                         <!-- 完美动作特效 -->
                         <div id="perfectEffect" class="perfect-effect" style="display: none;">
                             ✨ PERFECT! ✨
                         </div>
                     </div>
 
-                    <div class="performance-stats">
-                        <span>FPS: <span id="currentFPS">0.0</span></span>
-                        <span>延迟: <span id="latency">0</span>ms</span>
-                        <span>检测: <span id="personsDetected">0</span>人</span>
-                        <span>节拍: <span id="beatCount">0</span>个</span>
+                    <!-- 状态+总当前分数显示 -->
+                    <div class="stats-container" style="padding: 15px 0; text-align: center;">
+                        <div class="total-score-macaron" id="totalScoreMacaron">
+                            <i class="fas fa-star"></i>
+                            <span id="totalScoreValue" style="font-size: 2rem; font-weight: 700; margin-left: 8px;">0</span>
+                            <span style="margin-left: 8px; font-size: 1rem; color: var(--dark-gray);">当前得分</span>
+                        </div>
+                        <!-- 障碍得分显示 -->
+                        <div class="obstacle-score-display" id="obstacleScoreDisplay">
+                            <i class="fas fa-bullseye"></i>
+                            <span>障碍得分: </span>
+                            <span id="obstacleScoreValue">0</span>
+                        </div>
+                        <div class="performance-stats">
+                            <span>FPS: <span id="currentFPS">0.0</span></span>
+                            <span>延迟: <span id="latency">0</span>ms</span>
+                            <span>检测: <span id="personsDetected">0</span>人</span>
+                            <span>节拍: <span id="beatCount">0</span>个</span>
+                        </div>
                     </div>
+
                 </div>
             </div>
 
@@ -838,18 +990,6 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- 动作提示 -->
-                <div class="control-card" id="moveHintCard" style="display: none;">
-                    <h3 class="card-title">
-                        <i class="fas fa-hand-point-right"></i> 当前动作
-                    </h3>
-                    <div class="move-hint">
-                        <div class="move-emoji" id="moveEmoji">🤸‍♂️</div>
-                        <div class="move-name" id="moveName">准备姿势</div>
-                        <div class="move-timer" id="moveTimer">0.0s</div>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -895,32 +1035,10 @@
                 pose_score: 0,
                 rhythm_score: 0,
                 hand_score: 0,
-                total_score: 0
+                total_score: 0,
+                obstacle_score: 0
             },
             averageScore: 0,
-
-            // 显示控制
-            showCountdown: false,
-            countdownNumber: 3,
-            showResult: false,
-            finalScore: 0,
-            showPerfectEffect: false,
-
-            // 当前动作和计时
-            currentMove: {
-                name: '准备姿势',
-                emoji: '🤸‍♂️'
-            },
-            moveTimer: 0,
-
-            // 性能统计
-            currentFPS: 0,
-            latency: 0,
-            personsDetected: 0,
-
-            // 视频流
-            processedFrame: '',
-            referenceFrame: '',
 
             // 舞蹈选项
             danceOptions: [
@@ -936,8 +1054,18 @@
             referenceVideoUrl: '',
             referencePlaying: false,
             referenceVisible: true,
-            referenceFrameTimer: null
+            referenceFrameTimer: null,
+
+            // 性能统计
+            currentFPS: 0,
+            latency: 0,
+            personsDetected: 0
         };
+
+        // 障碍物管理
+        let obstacles = {};
+        let totalScoreHistory = [];
+        let totalScoreTimer = null;
 
         // DOM 元素
         const elements = {
@@ -960,6 +1088,12 @@
             cameraStatus: document.getElementById('cameraStatus'),
             retryCamera: document.getElementById('retryCamera'),
             processedFrame: document.getElementById('processedFrame'),
+
+            // 障碍相关
+            obstacleContainer: document.getElementById('obstacleContainer'),
+            scoreChangeContainer: document.getElementById('scoreChangeContainer'),
+            obstacleScoreDisplay: document.getElementById('obstacleScoreDisplay'),
+            obstacleScoreValue: document.getElementById('obstacleScoreValue'),
 
             // 状态点
             wsStatusDot: document.getElementById('wsStatusDot'),
@@ -985,12 +1119,6 @@
             rhythmScoreBar: document.getElementById('rhythmScoreBar'),
             handScoreBar: document.getElementById('handScoreBar'),
 
-            // 动作提示
-            moveHintCard: document.getElementById('moveHintCard'),
-            moveEmoji: document.getElementById('moveEmoji'),
-            moveName: document.getElementById('moveName'),
-            moveTimer: document.getElementById('moveTimer'),
-
             // 性能统计
             currentFPS: document.getElementById('currentFPS'),
             latency: document.getElementById('latency'),
@@ -1010,17 +1138,9 @@
         // 初始化应用
         function initApp() {
             console.log('🚀 应用初始化开始');
-
-            // 初始化舞蹈选择器
             initDanceSelector();
-
-            // 初始化WebSocket连接
             initWebSocket();
-
-            // 初始化事件监听器
             initEventListeners();
-
-            // 不再自动初始化摄像头
             console.log('✅ 应用初始化完成');
         }
 
@@ -1056,7 +1176,8 @@
         function initWebSocket() {
             try {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}/ws`;
+                const wsUrl = `${protocol}//${window.location.host}/ws/ws`;
+                console.log('🔗 WebSocket连接URL:', wsUrl);
 
                 appState.ws = new WebSocket(wsUrl);
 
@@ -1070,7 +1191,6 @@
                     console.log('❌ WebSocket连接断开');
                     appState.wsConnected = false;
                     updateConnectionStatus();
-                    // 5秒后重连
                     setTimeout(initWebSocket, 5000);
                 };
 
@@ -1105,6 +1225,15 @@
                 case 'score_update':
                     handleScoreUpdate(data);
                     break;
+                case 'obstacle_spawn':
+                    handleObstacleSpawn(data);
+                    break;
+                case 'obstacle_update':
+                    handleObstacleUpdate(data);
+                    break;
+                case 'obstacle_score':
+                    handleObstacleScore(data);
+                    break;
                 case 'game_started':
                     console.log('🎮 游戏开始');
                     appState.gameStarted = true;
@@ -1121,6 +1250,7 @@
                 case 'game_stopped':
                     appState.gameStarted = false;
                     appState.gamePaused = false;
+                    clearObstacles();
                     updateGameControls();
                     break;
                 case 'reference_ready':
@@ -1154,7 +1284,8 @@
                 updatePerformanceStats();
             } else if (data.type === 'reference') {
                 elements.referenceFrame.src = data.image;
-                elements.referenceFrame.style.display = appState.referenceVisible ? 'block' : 'none';
+                elements.referenceFrame.style.display = appState.referencePlaying ? 'block' : (appState.referenceVisible ? 'block' : 'none');
+                elements.referenceVideo.style.display = 'none';
                 appState.referenceDetected = data.persons_detected > 0;
                 updateStatusIndicators();
             }
@@ -1165,6 +1296,19 @@
             if (data.current_scores) {
                 appState.currentScores = data.current_scores;
                 updateScoreDisplay();
+                
+                // 更新障碍得分显示
+                if (data.current_scores.obstacle_score !== undefined) {
+                    elements.obstacleScoreValue.textContent = data.current_scores.obstacle_score;
+                }
+                
+                // 记录总分历史
+                if (typeof data.current_scores.total_score === 'number') {
+                    totalScoreHistory.push({
+                        score: data.current_scores.total_score,
+                        ts: Date.now()
+                    });
+                }
             }
             if (data.average_score !== undefined) {
                 appState.averageScore = data.average_score;
@@ -1174,6 +1318,162 @@
             // 检查是否触发完美特效
             if (data.current_scores && data.current_scores.total_score > 90) {
                 triggerPerfectEffect();
+            }
+        }
+
+        // 处理障碍生成
+        function handleObstacleSpawn(data) {
+            const obstacle = data.obstacle;
+            if (obstacle) {
+                obstacles[obstacle.id] = obstacle;
+                renderObstacles();
+                console.log(`🎯 新障碍生成: ${obstacle.type} - ${obstacle.id}`);
+            }
+        }
+
+        // 处理障碍更新
+        function handleObstacleUpdate(data) {
+            const obstacleList = data.obstacles || [];
+            // 更新/移除障碍
+            const ids = new Set();
+            obstacleList.forEach(obs => {
+                obstacles[obs.id] = obs;
+                ids.add(obs.id);
+            });
+            // 移除已消失障碍
+            Object.keys(obstacles).forEach(id => {
+                if (!ids.has(id)) delete obstacles[id];
+            });
+            renderObstacles();
+        }
+
+        // 处理障碍得分
+        function handleObstacleScore(data) {
+            const { person_id, result, score_change, display } = data;
+            
+            console.log(`🎯 障碍得分: Person ${person_id}, 结果: ${result}, 分数变化: ${score_change}`);
+            
+            // 显示分数变化效果
+            if (display) {
+                showScoreChangeEffect(display);
+            }
+            
+            // 播放音效（如果有）
+            playScoreSound(result);
+        }
+
+        // 渲染障碍物
+        function renderObstacles() {
+            const container = elements.obstacleContainer;
+            if (!container) return;
+
+            container.innerHTML = '';
+            
+            Object.values(obstacles).forEach(obs => {
+                const {position, size, pattern, blinking, progress} = obs;
+                const [x, y] = position;
+                const [w, h] = size;
+                
+                // 创建障碍框元素
+                const div = document.createElement('div');
+                div.className = 'obstacle-box ' + pattern.type + (blinking ? ' blinking' : '');
+                div.style.left = x + 'px';
+                div.style.top = y + 'px';
+                div.style.width = w + 'px';
+                div.style.height = h + 'px';
+                
+                // 设置内容
+                if (pattern.type === 'reward') {
+                    div.innerHTML = `
+                        <div style="font-size: 1.5rem;">🎯</div>
+                        <div style="font-size: 0.8rem;">TARGET</div>
+                    `;
+                } else if (pattern.type === 'penalty') {
+                    div.innerHTML = `
+                        <div style="font-size: 1.5rem;">⚠️</div>
+                        <div style="font-size: 0.8rem;">AVOID</div>
+                    `;
+                }
+                
+                // 添加进度条
+                const progressBar = document.createElement('div');
+                progressBar.style.cssText = `
+                    position: absolute;
+                    left: 0;
+                    bottom: 0;
+                    height: 4px;
+                    width: ${((1 - (progress || 0)) * 100)}%;
+                    background: ${pattern.type === 'reward' ? '#4CAF50' : '#F44336'};
+                    opacity: 0.7;
+                    border-radius: 0 0 8px 8px;
+                    transition: width 0.3s ease;
+                `;
+                div.appendChild(progressBar);
+                
+                container.appendChild(div);
+            });
+        }
+
+        // 显示分数变化效果
+        function showScoreChangeEffect(display) {
+            const container = elements.scoreChangeContainer;
+            if (!container) return;
+
+            const effect = document.createElement('div');
+            effect.className = 'score-change';
+            effect.textContent = `${display.icon || ''} ${display.text || ''}`;
+            
+            // 设置样式
+            effect.style.color = display.color || '#333';
+            
+            // 根据分数变化类型设置CSS类
+            if (display.text && display.text.includes('+')) {
+                effect.classList.add('positive');
+            } else if (display.text && display.text.includes('-')) {
+                effect.classList.add('negative');
+            } else {
+                effect.classList.add('miss');
+            }
+            
+            // 设置随机位置
+            effect.style.left = `${Math.random() * 60 + 20}%`;
+            effect.style.top = `${Math.random() * 60 + 20}%`;
+            
+            container.appendChild(effect);
+            
+            // 自动移除
+            setTimeout(() => {
+                if (effect.parentNode) {
+                    effect.parentNode.removeChild(effect);
+                }
+            }, display.duration || 2000);
+        }
+
+        // 播放得分音效
+        function playScoreSound(result) {
+            try {
+                // 这里可以添加音效播放逻辑
+                if (result === 'hit') {
+                    console.log('🔊 播放成功音效');
+                } else if (result === 'fail') {
+                    console.log('🔊 播放失败音效');
+                }
+            } catch (e) {
+                console.log('音效播放失败:', e);
+            }
+        }
+
+        // 清理所有障碍
+        function clearObstacles() {
+            obstacles = {};
+            if (elements.obstacleContainer) {
+                elements.obstacleContainer.innerHTML = '';
+            }
+            if (elements.scoreChangeContainer) {
+                elements.scoreChangeContainer.innerHTML = '';
+            }
+            if (elements.obstacleScoreValue) {
+                elements.obstacleScoreValue.textContent = '0';
             }
         }
 
@@ -1191,58 +1491,49 @@
             try {
                 elements.cameraPlaceholder.querySelector('p').textContent = '正在获取摄像头权限...';
                 elements.retryCamera.style.display = 'none';
-                navigator.mediaDevices.getUserMedia({
+                
+                const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
-                        width: 640,
-                        height: 480,
-                        facingMode: 'user'
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user',
+                        frameRate: { ideal: 10, max: 15 }  // 限制帧率
                     }
-                }).then(stream => {
-                    console.log('✅ 摄像头流获取成功');
-                    elements.cameraPlaceholder.querySelector('p').textContent = '正在连接摄像头...';
-                    elements.userVideo.srcObject = stream;
-                    elements.userVideo.onloadedmetadata = () => {
-                        console.log('📺 视频元数据加载完成');
-                        elements.cameraPlaceholder.querySelector('p').textContent = '正在启动播放...';
-                        elements.userVideo.play().then(() => {
-                            console.log('▶️ 视频播放开始');
-                            appState.cameraReady = true;
-                            updateCameraStatus();
-                            setTimeout(() => {
-                                startVideoCapture();
-                                if (typeof callback === 'function') callback();
-                            }, 500);
-                        }).catch(err => {
-                            console.error('视频播放失败:', err);
-                            showCameraError('视频播放失败，请重试');
-                        });
-                    };
-                    elements.userVideo.onerror = (err) => {
-                        console.error('视频元素错误:', err);
-                        showCameraError('视频元素错误');
-                    };
-                    setTimeout(() => {
-                        if (!appState.cameraReady) {
-                            showCameraError('摄像头启动超时，请重试');
-                        }
-                    }, 10000);
-                }).catch(error => {
-                    console.error('摄像头初始化失败:', error);
-                    let errorMessage = '摄像头初始化失败';
-                    if (error.name === 'NotAllowedError') {
-                        errorMessage = '摄像头权限被拒绝，请在浏览器设置中允许摄像头访问';
-                    } else if (error.name === 'NotFoundError') {
-                        errorMessage = '未找到摄像头设备';
-                    } else if (error.name === 'NotReadableError') {
-                        errorMessage = '摄像头被其他应用占用';
-                    } else {
-                        errorMessage = `摄像头初始化失败: ${error.message}`;
-                    }
-                    showCameraError(errorMessage);
                 });
+
+                console.log('✅ 摄像头流获取成功');
+                elements.cameraPlaceholder.querySelector('p').textContent = '正在连接摄像头...';
+                elements.userVideo.srcObject = stream;
+                
+                elements.userVideo.onloadedmetadata = () => {
+                    console.log('📺 视频元数据加载完成');
+                    elements.cameraPlaceholder.querySelector('p').textContent = '正在启动播放...';
+                    
+                    elements.userVideo.play().then(() => {
+                        console.log('▶️ 视频播放开始');
+                        appState.cameraReady = true;
+                        updateCameraStatus();
+                        setTimeout(() => {
+                            startVideoCapture();
+                            if (typeof callback === 'function') callback();
+                        }, 500);
+                    }).catch(err => {
+                        console.error('视频播放失败:', err);
+                        showCameraError('视频播放失败，请重试');
+                    });
+                };
+                
             } catch (error) {
                 console.error('摄像头初始化失败:', error);
-                showCameraError('摄像头初始化失败');
+                let errorMessage = '摄像头初始化失败';
+                if (error.name === 'NotAllowedError') {
+                    errorMessage = '摄像头权限被拒绝，请在浏览器设置中允许摄像头访问';
+                } else if (error.name === 'NotFoundError') {
+                    errorMessage = '未找到摄像头设备';
+                } else if (error.name === 'NotReadableError') {
+                    errorMessage = '摄像头被其他应用占用';
+                }
+                showCameraError(errorMessage);
             }
         }
 
@@ -1254,7 +1545,7 @@
             updateCameraStatus();
         }
 
-        // 开始视频捕获
+        // 开始视频捕获 - 优化版本
         function startVideoCapture() {
             if (!elements.userVideo || !appState.wsConnected) {
                 console.log('⚠️ 视频捕获条件不满足');
@@ -1264,19 +1555,27 @@
             console.log('🎬 开始视频帧捕获');
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
+            
+            let lastCaptureTime = 0;
+            const captureInterval = 100; // 100ms间隔，约10FPS
 
             const captureFrame = () => {
                 if (!appState.cameraReady || !appState.wsConnected || !elements.userVideo) {
-                    console.log('⏹️ 停止视频捕获');
                     return;
                 }
 
-                // 确保视频有有效尺寸
+                const now = Date.now();
+                if (now - lastCaptureTime < captureInterval) {
+                    requestAnimationFrame(captureFrame);
+                    return;
+                }
+                lastCaptureTime = now;
+
                 const videoWidth = elements.userVideo.videoWidth || 640;
                 const videoHeight = elements.userVideo.videoHeight || 480;
 
                 if (videoWidth === 0 || videoHeight === 0) {
-                    setTimeout(captureFrame, 100);
+                    requestAnimationFrame(captureFrame);
                     return;
                 }
 
@@ -1299,13 +1598,12 @@
                             };
                             reader.readAsDataURL(blob);
                         }
-                    }, 'image/jpeg', 0.8);
+                    }, 'image/jpeg', 0.6);  // 降低质量以提高性能
                 } catch (err) {
                     console.error('帧捕获错误:', err);
                 }
 
-                // 控制帧率为15FPS
-                setTimeout(captureFrame, 66);
+                requestAnimationFrame(captureFrame);
             };
 
             captureFrame();
@@ -1330,26 +1628,6 @@
                 initCamera();
             });
 
-            // 关闭摄像头按钮
-            setTimeout(() => {
-                let closeBtn = document.getElementById('closeCameraBtn');
-                if (!closeBtn) {
-                    closeBtn = document.createElement('button');
-                    closeBtn.id = 'closeCameraBtn';
-                }
-                closeBtn.className = 'control-button stop';
-                closeBtn.style.marginTop = '10px';
-                closeBtn.style.display = 'block';
-                closeBtn.style.marginLeft = 'auto';
-                closeBtn.style.marginRight = 'auto';
-                closeBtn.textContent = '关闭摄像头';
-                const camContainer = document.querySelector('.video-section .video-container:last-child .video-frame');
-                if (camContainer && closeBtn.parentNode !== camContainer.parentNode) {
-                    camContainer.parentNode.appendChild(closeBtn);
-                }
-                closeBtn.onclick = closeCamera;
-            }, 0);
-
             // 游戏控制
             elements.startGameBtn.addEventListener('click', startGame);
             elements.pauseGameBtn.addEventListener('click', pauseGame);
@@ -1360,10 +1638,6 @@
             // 结果弹窗
             elements.playAgainBtn.addEventListener('click', playAgain);
             elements.closeResultBtn.addEventListener('click', closeResult);
-            elements.resultModal.addEventListener('click', closeResult);
-            elements.resultModal.querySelector('.result-content').addEventListener('click', (e) => {
-                e.stopPropagation();
-            });
 
             // 参考视频事件
             elements.referenceVideo.addEventListener('play', onReferencePlay);
@@ -1380,11 +1654,9 @@
                 elements.referenceVideo.src = appState.referenceVideoUrl;
                 appState.referenceVisible = true;
 
-                // 隐藏占位符，显示视频
                 elements.referencePlaceholder.style.display = 'none';
                 elements.referenceVideo.style.display = 'block';
 
-                // 启用按钮
                 elements.startReferenceBtn.disabled = false;
                 elements.toggleReferenceBtn.disabled = false;
 
@@ -1437,6 +1709,8 @@
             appState.referencePlaying = true;
             elements.startReferenceBtn.disabled = true;
             elements.stopReferenceBtn.disabled = false;
+            elements.referenceVideo.style.display = 'none';
+            elements.referenceFrame.style.display = 'block';
             sendReferenceFrames();
         }
 
@@ -1444,6 +1718,8 @@
             appState.referencePlaying = false;
             elements.startReferenceBtn.disabled = false;
             elements.stopReferenceBtn.disabled = true;
+            elements.referenceFrame.style.display = appState.referenceVisible ? 'block' : 'none';
+            elements.referenceVideo.style.display = appState.referenceVisible ? 'block' : 'none';
             clearInterval(appState.referenceFrameTimer);
         }
 
@@ -1451,11 +1727,13 @@
             appState.referencePlaying = false;
             elements.startReferenceBtn.disabled = false;
             elements.stopReferenceBtn.disabled = true;
+            elements.referenceFrame.style.display = appState.referenceVisible ? 'block' : 'none';
+            elements.referenceVideo.style.display = appState.referenceVisible ? 'block' : 'none';
             clearInterval(appState.referenceFrameTimer);
         }
 
         function sendReferenceFrames() {
-            if (!elements.referenceVideo || !appState.referencePlaying || !appState.referenceReady) return;
+            if (!elements.referenceVideo || !appState.referencePlaying) return;
 
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -1463,7 +1741,7 @@
             canvas.height = elements.referenceVideo.videoHeight || 480;
 
             appState.referenceFrameTimer = setInterval(() => {
-                if (!appState.referencePlaying || !appState.referenceReady) return;
+                if (!appState.referencePlaying) return;
 
                 ctx.drawImage(elements.referenceVideo, 0, 0, canvas.width, canvas.height);
                 canvas.toBlob((blob) => {
@@ -1479,14 +1757,14 @@
                         };
                         reader.readAsDataURL(blob);
                     }
-                }, 'image/jpeg', 0.8);
-            }, 66); // 约15fps
+                }, 'image/jpeg', 0.6);
+            }, 100); // 约10fps
         }
 
         // 游戏控制函数
         function startGame() {
             if (!appState.wsConnected || !appState.selectedDance.id) return;
-            // 先初始化摄像头
+            
             if (!appState.cameraReady) {
                 initCamera(() => {
                     showCountdown();
@@ -1494,6 +1772,10 @@
             } else {
                 showCountdown();
             }
+            
+            totalScoreHistory = [];
+            updateTotalScoreMacaron();
+            startTotalScoreTimer();
         }
 
         function pauseGame() {
@@ -1506,36 +1788,37 @@
 
         function stopGame() {
             sendWebSocketMessage({ event: 'stop_game' });
+            totalScoreHistory = [];
+            updateTotalScoreMacaron();
+            if (totalScoreTimer) clearInterval(totalScoreTimer);
+            clearObstacles();
         }
 
         function stopDance() {
-            // 暂停摄像头画面
             appState.cameraReady = false;
             updateCameraStatus();
-            // 发送停止游戏事件
             sendWebSocketMessage({ event: 'stop_game' });
+            clearObstacles();
         }
 
         // 显示倒计时
         function showCountdown() {
-            appState.showCountdown = true;
-            appState.countdownNumber = 3;
+            let countdownNumber = 3;
             elements.countdown.style.display = 'flex';
-            elements.countdown.textContent = appState.countdownNumber;
+            elements.countdown.textContent = countdownNumber;
 
             const countdown = setInterval(() => {
-                appState.countdownNumber--;
-                if (appState.countdownNumber <= 0) {
+                countdownNumber--;
+                if (countdownNumber <= 0) {
                     clearInterval(countdown);
                     elements.countdown.style.display = 'none';
-                    appState.showCountdown = false;
 
                     sendWebSocketMessage({
                         event: 'start_game',
-                        level: appState.selectedDance.name // 发送难度
+                        level: appState.selectedDance.name
                     });
                 } else {
-                    elements.countdown.textContent = appState.countdownNumber;
+                    elements.countdown.textContent = countdownNumber;
                 }
             }, 1000);
         }
@@ -1596,13 +1879,11 @@
                 elements.pauseGameBtn.style.display = 'none';
                 elements.resumeGameBtn.style.display = 'none';
                 elements.stopGameBtn.style.display = 'none';
-                elements.moveHintCard.style.display = 'none';
 
-                elements.startGameBtn.disabled = !appState.cameraReady || !appState.wsConnected || !appState.selectedDance.id;
+                elements.startGameBtn.disabled = !appState.wsConnected || !appState.selectedDance.id;
             } else {
                 elements.startGameBtn.style.display = 'none';
                 elements.stopGameBtn.style.display = 'block';
-                elements.moveHintCard.style.display = 'block';
 
                 if (appState.gamePaused) {
                     elements.pauseGameBtn.style.display = 'none';
@@ -1629,7 +1910,7 @@
 
         function updatePerformanceStats() {
             elements.currentFPS.textContent = appState.currentFPS.toFixed(1);
-            elements.latency.textContent = appState.latency;
+            elements.latency.textContent = appState.latency.toFixed(0);
             elements.personsDetected.textContent = appState.personsDetected;
             elements.beatCount.textContent = appState.beatCount;
         }
@@ -1649,11 +1930,13 @@
                 pose_score: 0,
                 rhythm_score: 0,
                 hand_score: 0,
-                total_score: 0
+                total_score: 0,
+                obstacle_score: 0
             };
             appState.averageScore = 0;
             updateScoreDisplay();
             elements.averageScore.textContent = '0';
+            clearObstacles();
             startGame();
         }
 
@@ -1661,27 +1944,21 @@
             elements.resultModal.style.display = 'none';
         }
 
-        function showResult(finalScore) {
-            appState.finalScore = finalScore;
-            elements.finalScore.textContent = finalScore;
-            elements.finalRating.textContent = getRating(finalScore);
-            elements.resultModal.style.display = 'flex';
+        // 定时更新十秒平均分
+        function updateTotalScoreMacaron() {
+            const now = Date.now();
+            totalScoreHistory = totalScoreHistory.filter(item => now - item.ts <= 10000);
+            if (totalScoreHistory.length > 0) {
+                const avg = totalScoreHistory.reduce((sum, item) => sum + item.score, 0) / totalScoreHistory.length;
+                document.getElementById('totalScoreValue').textContent = avg.toFixed(1);
+            } else {
+                document.getElementById('totalScoreValue').textContent = '0';
+            }
         }
 
-        // 关闭摄像头
-        function closeCamera() {
-            const video = elements.userVideo;
-            if (video && video.srcObject) {
-                const tracks = video.srcObject.getTracks();
-                tracks.forEach(track => track.stop());
-                video.srcObject = null;
-            }
-            appState.cameraReady = false;
-            updateCameraStatus();
-            // 恢复为未开启摄像头画面（显示占位符，隐藏video）
-            elements.cameraPlaceholder.style.display = 'flex';
-            elements.userVideo.style.display = 'none';
-            elements.processedFrame.style.display = 'none';
+        function startTotalScoreTimer() {
+            if (totalScoreTimer) clearInterval(totalScoreTimer);
+            totalScoreTimer = setInterval(updateTotalScoreMacaron, 1000);
         }
 
         // 页面加载完成后初始化

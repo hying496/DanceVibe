@@ -114,7 +114,7 @@ class BasePoseDetector:
 class MediaPipeDetector(BasePoseDetector):
     """MediaPipe全身+手势检测器"""
 
-    def __init__(self, confidence_threshold: float = 0.5, model_complexity: int = 1):
+    def __init__(self, confidence_threshold: float = 0.5, model_complexity: int = 0):
         super().__init__(confidence_threshold)
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(

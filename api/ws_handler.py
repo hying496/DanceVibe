@@ -8,47 +8,79 @@ import tempfile
 import os
 from typing import Dict, List, Optional
 import sys
+import traceback
 
 # 添加项目根路径到sys.path
 from pathlib import Path
 
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
+sys.path.append(str(project_root / 'detector'))
+sys.path.append(str(project_root / 'score'))
 
-from .model import Keypoint, Landmarks
-from .utils import decode_base64_image, encode_image_to_base64, pad_landmarks, draw_landmarks
+from api.model import Keypoint, Landmarks
+from api.utils import decode_base64_image, encode_image_to_base64, pad_landmarks, draw_landmarks
 
-# 修复导入路径 - 直接从根目录导入
+# 强制导入所有必要的模块
+print("🔄 正在导入必要模块...")
+
+# 1. 导入姿态检测模块
+try:
+    from detector.pose_detector import DetectorType, PoseDetectionManager
+    print("✅ 姿态检测模块导入成功")
+    detector_available = True
+except ImportError as e:
+    print(f"❌ 姿态检测模块导入失败: {e}")
+    traceback.print_exc()
+    detector_available = False
+
+# 2. 导入评分模块
 try:
     from score.similarity import calculate_pose_similarity
     from score.score_pose import score_pose
     from score.music_beat import mp4_2_mp3, get_beats
     from score.motion_match import match_motion_to_beats
     from score.average_similarity import CumulativeScore
+    print("✅ 评分模块导入成功")
+    score_available = True
 except ImportError as e:
-    print(f"⚠️ Score模块导入失败: {e}")
+    print(f"❌ 评分模块导入失败: {e}")
+    traceback.print_exc()
+    score_available = False
 
+# 3. 提供备用实现
+if not detector_available:
+    print("⚠️ 使用备用检测器实现")
 
-    # 提供备用函数
+    class DetectorType:
+        MEDIAPIPE = "mediapipe"
+
+    class PoseDetectionManager:
+        def __init__(self, detector_type):
+            self.detector_type = detector_type
+            print(f"⚠️ 使用备用检测器: {detector_type}")
+
+        def detect_poses(self, frame):
+            # 返回空的检测结果
+            return [], {"processing_time_ms": 10}
+
+if not score_available:
+    print("⚠️ 使用备用评分实现")
+
     def calculate_pose_similarity(lm1, lm2):
-        return 0.8  # 默认相似度
-
+        return 0.8
 
     def score_pose(pose_score, delta_t):
         return pose_score * 0.9
 
-
     def mp4_2_mp3(video_path):
         return ""
-
 
     def get_beats(audio_path):
         return 120, [], []
 
-
     def match_motion_to_beats(motion, beats):
         return []
-
 
     class CumulativeScore:
         def __init__(self):
@@ -63,44 +95,68 @@ except ImportError as e:
             self.scores = []
             self.average = 0.0
 
-# 导入姿态检测管理器
-try:
-    from detector.pose_detector import DetectorType, PoseDetectionManager
-except ImportError as e:
-    print(f"⚠️ Detector模块导入失败: {e}")
-
-
-    # 提供备用类
-    class DetectorType:
-        MEDIAPIPE = "mediapipe"
-
-
-    class PoseDetectionManager:
-        def __init__(self, detector_type):
-            self.detector_type = detector_type
-            print(f"✅ 使用备用检测器: {detector_type}")
-
-        def detect_poses(self, frame):
-            # 返回空的检测结果
-            return [], {"processing_time_ms": 10}
-
 ws_router = APIRouter()
 
 
-# 全局存储
+# 连接管理和会话类
+class PersonScoreTracker:
+    """每个人的独立评分追踪器"""
+
+    def __init__(self, person_id):
+        self.person_id = person_id
+        self.cumulative_score = CumulativeScore()
+        self.score_history = []
+        self.current_scores = {
+            'similarity': 0.0,
+            'pose_score': 0.0,
+            'rhythm_score': 0.0,
+            'total_score': 0.0,
+            'avg_score': 0.0
+        }
+
+    def update_scores(self, similarity, pose_score, rhythm_score, total_score):
+        self.current_scores['similarity'] = similarity
+        self.current_scores['pose_score'] = pose_score
+        self.current_scores['rhythm_score'] = rhythm_score
+        self.current_scores['total_score'] = total_score
+
+        if total_score > 0:
+            self.cumulative_score.update(total_score)
+            self.current_scores['avg_score'] = self.cumulative_score.average
+            self.score_history.append(total_score)
+
+
 class GameSession:
     def __init__(self):
+        # 参考视频相关
         self.reference_landmarks: Optional[List[Keypoint]] = None
         self.reference_video_path: Optional[str] = None
         self.beat_times: List[float] = []
+        
+        # 游戏状态
         self.game_started: bool = False
         self.game_paused: bool = False
         self.selected_dance: Dict = {'id': 1, 'name': 'Easy'}
-        self.level: str = 'Easy'  # 新增难度字段
-        self.cumulative_score = CumulativeScore()
+        self.level: str = 'Easy'
         self.start_time: Optional[float] = None
-        self.pose_manager = PoseDetectionManager(DetectorType.MEDIAPIPE)
         self.frame_count: int = 0
+        
+        # 创建两个完全独立的检测器实例
+        try:
+            self.pose_manager_reference = PoseDetectionManager(DetectorType.MEDIAPIPE)
+            self.pose_manager_webcam = PoseDetectionManager(DetectorType.MEDIAPIPE)
+            
+            print(f"✅ 参考视频检测器: {id(self.pose_manager_reference)}")
+            print(f"✅ 用户视频检测器: {id(self.pose_manager_webcam)}")
+            print("✅ 两个独立检测器初始化成功")
+        except Exception as e:
+            print(f"❌ 检测器初始化失败: {e}")
+            self.pose_manager_reference = None
+            self.pose_manager_webcam = None
+        
+        # 多人评分追踪
+        self.person_trackers: Dict[int, PersonScoreTracker] = {}
+        self.cumulative_score = CumulativeScore()  # 保留整体分数
         self.score_history: List[float] = []
 
 
@@ -124,7 +180,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 msg = json.loads(data)
                 await handle_message(msg, websocket, session)
             except Exception as e:
-                print(f"消息处理失败: {e}")
+                print(f"❌ 消息处理失败: {e}")
+                traceback.print_exc()
                 await websocket.send_json({
                     'event': 'error',
                     'message': f'消息处理失败: {str(e)}'
@@ -135,7 +192,8 @@ async def websocket_endpoint(websocket: WebSocket):
         if session_id in active_sessions:
             del active_sessions[session_id]
     except Exception as e:
-        print(f"WebSocket错误: {e}")
+        print(f"❌ WebSocket错误: {e}")
+        traceback.print_exc()
         if session_id in active_sessions:
             del active_sessions[session_id]
 
@@ -162,15 +220,22 @@ async def handle_message(msg: Dict, websocket: WebSocket, session: GameSession):
 
 
 async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
-    """处理视频帧"""
+    """处理视频帧 - 根据帧类型选择不同的检测器实例"""
     frame_type = msg.get('frame_type', 'webcam')
     image_data = msg.get('image', '')
     current_time = msg.get('current_time', 0.0)
 
-    print(f"🎬 处理{frame_type}帧，图片数据长度: {len(image_data)}")
+    # 根据帧类型选择不同的检测器实例
+    if frame_type == 'reference':
+        pose_manager = session.pose_manager_reference
+    else:
+        pose_manager = session.pose_manager_webcam
+    
+    print(f"🔍 使用检测器: {id(pose_manager)} ({frame_type})")
+    print(f"🎬 处理{frame_type}帧")
 
-    if not image_data:
-        print("❌ 图片数据为空")
+    if not image_data or not pose_manager:
+        print("❌ 图片数据为空或检测器未初始化")
         return
 
     try:
@@ -180,40 +245,65 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
             print("❌ 图片解码失败")
             return
 
+        height, width = frame.shape[:2]
         print(f"✅ 图片解码成功，尺寸: {frame.shape}")
 
         # 姿态检测
         start_time = time.time()
-        persons, det_info = session.pose_manager.detect_poses(frame)
+        persons, det_info = pose_manager.detect_poses(frame)
         processing_time = (time.time() - start_time) * 1000
 
-        print(f"🔍 姿态检测完成，检测到 {len(persons) if persons else 0} 人，耗时: {processing_time:.2f}ms")
+        print(f"🔍 姿态检测完成，检测到 {len(persons) if persons else 0} 人")
+
+        # === 实现main.py的逻辑：左侧只保留主舞者，右侧保留所有人 ===
+        if frame_type == 'reference' and persons:
+            # 参考视频：只保留距离中心最近的主舞者
+            def get_center_distance(person):
+                if not person.keypoints:
+                    return float('inf')
+                xs = [kp.x for kp in person.keypoints if kp.visible]
+                ys = [kp.y for kp in person.keypoints if kp.visible]
+                if not xs or not ys:
+                    return float('inf')
+                px, py = sum(xs) / len(xs), sum(ys) / len(ys)
+                cx, cy = width / 2, height / 2
+                return (px - cx) ** 2 + (py - cy) ** 2
+
+            main_person = min(persons, key=get_center_distance)
+            persons = [main_person]  # 只保留主舞者
+            main_person.id = 0  # 给主舞者固定ID
+            print("📹 参考视频：选择主舞者")
 
         # 提取关键点
-        landmarks = None
-        if persons and len(persons) > 0:
-            # 取第一个人的关键点
-            person = persons[0]
-            kps = []
-            for kp in person.keypoints:
-                kps.append(Keypoint(
-                    x=float(kp.x),
-                    y=float(kp.y),
-                    z=getattr(kp, 'z', 0.0),
-                    confidence=getattr(kp, 'confidence', 1.0),
-                    visible=getattr(kp, 'visible', True)
-                ))
-            landmarks = pad_landmarks(kps, 33)
-            print(f"✅ 提取关键点完成，共{len(landmarks)}个点")
+        all_landmarks = []
+        if persons:
+            for person in persons:
+                kps = []
+                for kp in person.keypoints:
+                    kps.append(Keypoint(
+                        x=float(kp.x),
+                        y=float(kp.y),
+                        z=getattr(kp, 'z', 0.0),
+                        confidence=getattr(kp, 'confidence', 1.0),
+                        visible=getattr(kp, 'visible', True)
+                    ))
+                landmarks = pad_landmarks(kps, 33)
+                all_landmarks.append(landmarks)
+                print(f"✅ 提取关键点完成，Person {getattr(person, 'id', 0)}: {len(landmarks)}个点")
 
-        # 绘制姿态 - 对于参考视频使用红色，用户视频使用绿色
-        if landmarks:
-            color = (0, 0, 255) if frame_type == 'reference' else (0, 255, 0)  # 红色/绿色
-            vis_frame = draw_landmarks(frame.copy(), landmarks, color=color)
-            print(f"✅ 绘制姿态完成，颜色: {'红色' if frame_type == 'reference' else '绿色'}")
-        else:
-            vis_frame = frame.copy()
-            print("⚠️ 无关键点，使用原图")
+        # 绘制姿态
+        vis_frame = frame.copy()
+        if all_landmarks:
+            # 为不同的人使用不同颜色
+            colors = [(0, 255, 0), (255, 0, 0), (0, 0, 255), (255, 255, 0), (0, 255, 255), (255, 0, 255)]
+            for i, landmarks in enumerate(all_landmarks):
+                color = colors[i % len(colors)]
+                vis_frame = draw_landmarks(vis_frame, landmarks, color=color)
+
+        # 如果是参考视频，添加"Main Dancer"标注
+        if frame_type == 'reference' and all_landmarks:
+            cv2.putText(vis_frame, "Main Dancer", (50, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
 
         # 编码图片
         vis_img_b64 = encode_image_to_base64(vis_frame)
@@ -227,33 +317,130 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
             'processing_time_ms': processing_time,
         })
 
-        print(f"📤 发送{frame_type}帧结果完成")
-
         # 处理参考帧
-        if frame_type == 'reference':
-            session.reference_landmarks = landmarks
-            print(f"📹 参考视频关键点已保存")
+        if frame_type == 'reference' and all_landmarks:
+            session.reference_landmarks = all_landmarks[0]  # 主舞者的关键点
+            print(f"📹 参考视频主舞者关键点已保存")
 
-        # 处理用户帧并计算分数
-        elif frame_type == 'webcam' and session.reference_landmarks and landmarks:
-            print(f"🎯 开始计算用户帧分数")
-            await calculate_and_send_score(landmarks, current_time, websocket, session)
+        # 处理用户帧并计算多人分数
+        elif frame_type == 'webcam' and session.reference_landmarks and all_landmarks:
+            print(f"🎯 开始计算多人分数，共{len(all_landmarks)}人")
+            await calculate_multi_person_scores(all_landmarks, current_time, websocket, session, persons)
 
     except Exception as e:
         print(f"❌ 帧处理错误: {e}")
+        traceback.print_exc()
         await websocket.send_json({
             'event': 'error',
             'message': f'帧处理失败: {str(e)}'
         })
 
 
+async def calculate_multi_person_scores(all_landmarks: List[List[Keypoint]], current_time: float,
+                                        websocket: WebSocket, session: GameSession, persons):
+    """计算多人分数 - 实现main.py的多人评分逻辑"""
+    if not session.game_started or session.game_paused:
+        return
+
+    try:
+        # 处理每个人的分数
+        person_scores = {}
+
+        for i, user_landmarks in enumerate(all_landmarks):
+            person_id = getattr(persons[i], 'id', i) if i < len(persons) else i
+
+            # 为新人创建tracker
+            if person_id not in session.person_trackers:
+                session.person_trackers[person_id] = PersonScoreTracker(person_id)
+                print(f"🆕 创建新的人员追踪器: ID {person_id}")
+
+            # 计算该人的分数
+            try:
+                pose_score = calculate_pose_similarity(session.reference_landmarks, user_landmarks) or 0.0
+
+                # 计算节奏分数
+                rhythm_score = 0.0
+                delta_t = 1.0
+                if session.beat_times and session.start_time:
+                    relative_time = current_time - (time.time() - session.start_time)
+                    if session.beat_times:
+                        delta_t = min([abs(relative_time - bt) for bt in session.beat_times])
+                        rhythm_score = max(0, 1 - delta_t / 0.4)
+
+                # 手势分数（简化版）
+                hand_score = pose_score * 0.8
+
+                # 难度权重
+                LEVEL_WEIGHTS = {
+                    'Easy': (0.8, 0.15, 0.05),
+                    'Medium': (0.6, 0.3, 0.1),
+                    'Hard': (0.5, 0.4, 0.1),
+                    'Expert': (0.4, 0.5, 0.1)
+                }
+                w_pose, w_rhythm, w_hand = LEVEL_WEIGHTS.get(session.level, (0.8, 0.15, 0.05))
+                total_score = w_pose * pose_score + w_rhythm * rhythm_score + w_hand * hand_score
+
+                # 更新该人的分数
+                tracker = session.person_trackers[person_id]
+                tracker.update_scores(pose_score, pose_score, rhythm_score, total_score)
+
+                person_scores[person_id] = tracker.current_scores
+
+                print(f"📊 Person {person_id}: 姿态={pose_score:.2f}, 节奏={rhythm_score:.2f}, 总分={total_score:.2f}")
+
+            except Exception as e:
+                print(f"❌ Person {person_id} 分数计算错误: {e}")
+                continue
+
+        # 清理不活跃的人员
+        active_person_ids = set(person_scores.keys())
+        inactive_ids = set(session.person_trackers.keys()) - active_person_ids
+        for person_id in inactive_ids:
+            del session.person_trackers[person_id]
+            print(f"🗑️ 清理不活跃的人员: ID {person_id}")
+
+        # 计算整体平均分数（用于顶部显示）
+        if person_scores:
+            all_total_scores = [scores['total_score'] for scores in person_scores.values()]
+            avg_total_score = sum(all_total_scores) / len(all_total_scores)
+            session.cumulative_score.update(avg_total_score)
+
+        session.frame_count += 1
+
+        # 发送多人分数更新
+        await websocket.send_json({
+            'event': 'score_update',
+            'person_scores': person_scores,  # 新增：每个人的分数
+            'current_scores': {  # 主要显示（第一个人或平均）
+                'pose_score': round(list(person_scores.values())[0]['pose_score'] * 100, 2) if person_scores else 0,
+                'rhythm_score': round(list(person_scores.values())[0]['rhythm_score'] * 100, 2) if person_scores else 0,
+                'hand_score': round(list(person_scores.values())[0]['rhythm_score'] * 80, 2) if person_scores else 0,
+                'total_score': round(list(person_scores.values())[0]['total_score'] * 100, 2) if person_scores else 0
+            },
+            'average_score': round(session.cumulative_score.average * 100, 2),
+            'frame_count': session.frame_count,
+            'persons_detected': len(person_scores)
+        })
+
+        # 自动结束游戏（60秒后）
+        if session.start_time and (time.time() - session.start_time) > 60:
+            await handle_stop_game(websocket, session)
+
+    except Exception as e:
+        print(f"❌ 多人分数计算错误: {e}")
+        traceback.print_exc()
+
+
 async def handle_upload_reference_video(msg: Dict, websocket: WebSocket, session: GameSession):
     """处理参考视频上传"""
     video_data = msg.get('video', '')
     if not video_data:
+        print("❌ 视频数据为空")
         return
 
     try:
+        print("📤 开始处理参考视频上传...")
+
         # 解码视频数据
         if ',' in video_data:
             video_bytes = base64.b64decode(video_data.split(',')[1])
@@ -265,8 +452,11 @@ async def handle_upload_reference_video(msg: Dict, websocket: WebSocket, session
             tmp_file.write(video_bytes)
             session.reference_video_path = tmp_file.name
 
+        print(f"✅ 视频保存成功: {session.reference_video_path}")
+
         # 提取音频和节拍
         try:
+            print("🎵 开始提取音频和节拍...")
             audio_path = mp4_2_mp3(session.reference_video_path)
             tempo, beats, beat_times = get_beats(audio_path)
             session.beat_times = beat_times.tolist() if hasattr(beat_times, 'tolist') else list(beat_times)
@@ -280,19 +470,22 @@ async def handle_upload_reference_video(msg: Dict, websocket: WebSocket, session
             await websocket.send_json({
                 'event': 'reference_ready',
                 'beat_count': len(session.beat_times),
-                'tempo': tempo
+                'tempo': float(tempo) if hasattr(tempo, 'item') else tempo
             })
 
         except Exception as e:
-            print(f"节拍提取失败: {e}")
+            print(f"⚠️ 节拍提取失败: {e}")
             session.beat_times = []
             await websocket.send_json({
-                'event': 'error',
-                'message': f'节拍提取失败: {str(e)}'
+                'event': 'reference_ready',
+                'beat_count': 0,
+                'tempo': 120.0,
+                'message': f'视频上传成功，但节拍提取失败: {str(e)}'
             })
 
     except Exception as e:
-        print(f"视频上传处理失败: {e}")
+        print(f"❌ 视频上传处理失败: {e}")
+        traceback.print_exc()
         await websocket.send_json({
             'event': 'error',
             'message': f'视频上传失败: {str(e)}'
@@ -302,13 +495,15 @@ async def handle_upload_reference_video(msg: Dict, websocket: WebSocket, session
 async def handle_start_game(msg: Dict, websocket: WebSocket, session: GameSession):
     """开始游戏"""
     session.selected_dance = msg.get('dance', session.selected_dance)
-    session.level = msg.get('level', session.selected_dance.get('name', 'Easy'))  # 解析level
+    session.level = msg.get('level', session.selected_dance.get('name', 'Easy'))
     session.game_started = True
     session.game_paused = False
     session.start_time = time.time()
     session.frame_count = 0
     session.score_history = []
     session.cumulative_score.reset()
+    session.person_trackers.clear()  # 清理之前的人员追踪器
+
     await websocket.send_json({
         'event': 'game_started',
         'dance': session.selected_dance,
@@ -340,55 +535,8 @@ async def handle_stop_game(websocket: WebSocket, session: GameSession):
 
     await websocket.send_json({
         'event': 'game_stopped',
-        'final_score': round(final_score, 2)
+        'final_score': round(final_score, 2),
+        'total_persons': len(session.person_trackers)
     })
 
-    print(f"🛑 游戏结束，最终得分: {final_score:.2f}")
-
-
-async def calculate_and_send_score(user_landmarks: List[Keypoint], current_time: float,
-                                   websocket: WebSocket, session: GameSession):
-    """计算并发送分数"""
-    if not session.game_started or session.game_paused:
-        return
-    try:
-        pose_score = calculate_pose_similarity(user_landmarks, session.reference_landmarks) or 0.0
-        rhythm_score = 0.0
-        delta_t = 1.0
-        if session.beat_times and session.start_time:
-            relative_time = current_time - (time.time() - session.start_time)
-            if session.beat_times:
-                delta_t = min([abs(relative_time - bt) for bt in session.beat_times])
-                rhythm_score = max(0, 1 - delta_t / 0.4)
-        hand_score = pose_score * 0.8
-        # 难度权重表
-        LEVEL_WEIGHTS = {
-            'Easy':    (0.8, 0.15, 0.05),
-            'Medium':  (0.6, 0.3, 0.1),
-            'Hard':    (0.5, 0.4, 0.1),
-            'Expert':  (0.4, 0.5, 0.1)
-        }
-        w_pose, w_rhythm, w_hand = LEVEL_WEIGHTS.get(session.level, (0.8, 0.15, 0.05))
-        total_score = w_pose * pose_score + w_rhythm * rhythm_score + w_hand * hand_score
-        session.cumulative_score.update(total_score)
-        session.score_history.append(total_score)
-        session.frame_count += 1
-        await websocket.send_json({
-            'event': 'score_update',
-            'current_scores': {
-                'pose_score': round(pose_score * 100, 2),
-                'rhythm_score': round(rhythm_score * 100, 2),
-                'hand_score': round(hand_score * 100, 2),
-                'total_score': round(total_score * 100, 2)
-            },
-            'average_score': round(session.cumulative_score.average * 100, 2),
-            'frame_count': session.frame_count
-        })
-        if session.start_time and (time.time() - session.start_time) > 60:
-            await handle_stop_game(websocket, session)
-    except Exception as e:
-        print(f"分数计算错误: {e}")
-        await websocket.send_json({
-            'event': 'error',
-            'message': f'分数计算失败: {str(e)}'
-        })
+    print(f"🛑 游戏结束，最终得分: {final_score:.2f}，共{len(session.person_trackers)}人参与")

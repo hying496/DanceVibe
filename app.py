@@ -82,8 +82,9 @@ def register_routes():
         from api.pose_api import router as pose_router
         from api.score_api import router as score_router
 
-        # WebSocket路由
-        app.include_router(ws_router, tags=["WebSocket"])
+        # WebSocket路由 - 添加prefix="/ws"
+        app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
+        logger.info("✅ WebSocket路由注册完成: /ws")
 
         # API路由
         app.include_router(pose_router, prefix="/api/pose", tags=["姿态检测"])
@@ -133,6 +134,7 @@ async def root():
                              background: #007bff; color: white; text-decoration: none; 
                              border-radius: 5px; }
                     .links a:hover { background: #0056b3; }
+                    .note { margin-top: 20px; color: #666; font-style: italic; }
                 </style>
             </head>
             <body>
@@ -144,6 +146,9 @@ async def root():
                         <a href="/docs">API 文档</a>
                         <a href="/redoc">ReDoc</a>
                         <a href="/health">健康检查</a>
+                    </div>
+                    <div class="note">
+                        🔧 已优化：WebSocket路径 /ws/ws，独立检测器实例
                     </div>
                 </div>
             </body>
@@ -161,7 +166,33 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": time.time(),
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "websocket_path": "/ws/ws",
+        "features": [
+            "独立检测器实例",
+            "多人姿态检测", 
+            "实时评分",
+            "节拍提取"
+        ]
+    }
+
+
+# WebSocket信息接口
+@app.get("/ws/info")
+async def websocket_info():
+    """WebSocket连接信息"""
+    return {
+        "websocket_url": "/ws/ws",
+        "protocol": "ws",
+        "description": "实时舞蹈姿态检测和评分",
+        "events": [
+            "frame", 
+            "upload_reference_video", 
+            "start_game", 
+            "pause_game", 
+            "resume_game", 
+            "stop_game"
+        ]
     }
 
 
@@ -181,6 +212,8 @@ async def startup_event():
     register_routes()
 
     logger.info("✅ DanceVibe 应用启动完成")
+    logger.info("🔗 WebSocket 路径: /ws/ws")
+    logger.info("📖 API 文档: /docs")
 
 
 # 关闭事件
@@ -212,6 +245,7 @@ def main():
 
         logger.info(f"🌐 启动服务器: http://{host}:{port}")
         logger.info(f"📖 API文档: http://{host}:{port}/docs")
+        logger.info(f"🔗 WebSocket: ws://{host}:{port}/ws/ws")
 
         # 启动服务器
         uvicorn.run(
