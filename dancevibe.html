@@ -829,7 +829,7 @@
             <div class="user-info">
                 <div class="connection-status" id="connectionStatus">
                     <i class="fas fa-wifi-slash"></i>
-                    <span>连接中...</span>
+                    <span>Connecting...</span>
                 </div>
                 <div class="score-display">
                     <i class="fas fa-trophy"></i> <span id="averageScore">0</span>
@@ -848,9 +848,9 @@
                 <div class="video-container">
                     <div class="video-header">
                         <h3 class="video-title" style="display:inline-block;vertical-align:middle;">
-                            <i class="fas fa-play-circle"></i> 参考视频
+                            <i class="fas fa-play-circle"></i> Reference
                         </h3>
-                        <span class="video-badge connected" id="selectedDanceName" style="margin-left:auto; margin-right: 8px;">请选择舞蹈</span>
+                        <span class="video-badge connected" id="selectedDanceName" style="margin-left:auto; margin-right: 8px;">Level Unselected</span>
                         <!-- 声音开关按钮 -->
                         <button id="referenceSoundBtn" style="background:none;border:none;outline:none;cursor:pointer;margin-right:8px;font-size:1.2rem;" title="切换声音">
                             <i id="referenceSoundIcon" class="fas fa-volume-mute"></i>
@@ -860,7 +860,7 @@
                     <div class="video-frame">
                         <div class="video-placeholder" id="referencePlaceholder">
                             <i class="fas fa-video"></i>
-                            <p>点击"打开视频"选择参考舞蹈视频</p>
+                            <p>Click 'Open' to select a reference dance video</p>
                         </div>
 
                         <!-- 本地参考视频播放 -->
@@ -881,16 +881,16 @@
                     <div class="reference-controls">
                         <input type="file" accept="video/*" id="referenceInput" style="display:none">
                         <button class="ref-btn open" id="openReferenceBtn">
-                            <i class="fas fa-folder-open"></i> 打开视频
+                            <i class="fas fa-folder-open"></i> Open
                         </button>
                         <button class="ref-btn start" id="startReferenceBtn" disabled>
-                            <i class="fas fa-play"></i> 播放
+                            <i class="fas fa-play"></i> Play
                         </button>
                         <button class="ref-btn stop" id="stopReferenceBtn" disabled>
-                            <i class="fas fa-stop"></i> 停止
+                            <i class="fas fa-stop"></i> Pause
                         </button>
                         <button class="ref-btn toggle" id="toggleReferenceBtn" disabled>
-                            <i class="fas fa-eye"></i> <span>隐藏</span>
+                            <i class="fas fa-eye"></i> <span>Hide</span>
                         </button>
                     </div>
                 </div>
@@ -907,9 +907,9 @@
                     <div class="video-frame" style="position: relative;">
                         <div class="video-placeholder" id="cameraPlaceholder">
                             <i class="fas fa-camera-slash"></i>
-                            <p>正在启动摄像头...</p>
+                            <p>Starting camera...</p>
                             <button id="retryCamera" class="control-button" style="margin-top: 1rem; padding: 0.5rem 1rem; font-size: 0.9rem; display: none;">
-                                <i class="fas fa-redo"></i> 重试
+                                <i class="fas fa-redo"></i> Retry
                             </button>
                         </div>
 
@@ -936,19 +936,19 @@
                         <div class="total-score-macaron" id="totalScoreMacaron">
                             <i class="fas fa-star"></i>
                             <span id="totalScoreValue" style="font-size: 2rem; font-weight: 700; margin-left: 8px;">0</span>
-                            <span style="margin-left: 8px; font-size: 1rem; color: var(--dark-gray);">当前得分</span>
+                            <span style="margin-left: 8px; font-size: 1rem; color: var(--dark-gray);">Current Score</span>
                         </div>
                         <!-- 障碍得分显示 -->
                         <div class="obstacle-score-display" id="obstacleScoreDisplay">
                             <i class="fas fa-bullseye"></i>
-                            <span>障碍得分: </span>
+                            <span>Obstacle Scoring </span>
                             <span id="obstacleScoreValue">0</span>
                         </div>
                         <div class="performance-stats">
                             <span>FPS: <span id="currentFPS">0.0</span></span>
-                            <span>延迟: <span id="latency">0</span>ms</span>
-                            <span>检测: <span id="personsDetected">0</span>人</span>
-                            <span>节拍: <span id="beatCount">0</span>个</span>
+                            <span>Delay: <span id="latency">0</span>ms</span>
+                            <span>persons_detected <span id="personsDetected">0</span></span>
+                            <span>Beats: <span id="beatCount">0</span></span>
                         </div>
                     </div>
 
@@ -970,11 +970,11 @@
                 <!-- 游戏控制 -->
                 <div class="control-card">
                     <h3 class="card-title">
-                        <i class="fas fa-gamepad"></i> 游戏控制
+                        <i class="fas fa-gamepad"></i> Game Control
                     </h3>
                     <div class="game-controls">
                         <button class="control-button" id="startGameBtn">
-                            <i class="fas fa-play"></i> 开始舞蹈
+                            <i class="fas fa-play"></i> start
                         </button>
                         <button class="control-button pause" id="pauseGameBtn" style="display: none;">
                             <i class="fas fa-pause"></i> 暂停
@@ -985,35 +985,37 @@
                         <button class="control-button stop" id="stopGameBtn" style="display: none;">
                             <i class="fas fa-stop"></i> 结束
                         </button>
-                        <button class="control-button" id="stopDanceBtn" style="margin-top: 10px;">停止舞蹈</button>
+                        <button class="control-button" id="stopDanceBtn" style="margin-top: 10px;">
+                            <i class="fas fa-pause"></i> pause
+                        </button>
                     </div>
                 </div>
 
                 <!-- 实时得分 -->
                 <div class="control-card">
                     <h3 class="card-title">
-                        <i class="fas fa-chart-line"></i> 实时得分
+                        <i class="fas fa-chart-line"></i> Scoring System
                     </h3>
                     <div class="score-section">
                         <div class="current-score" id="currentScore">0</div>
-                        <div class="score-label">当前得分</div>
+                        <div class="score-label">Realtime Score</div>
                         <div class="score-bars">
                             <div class="score-bar">
-                                <span class="score-name">姿态</span>
+                                <span class="score-name">POSE</span>
                                 <div class="progress-bar">
                                     <div class="progress-fill" id="poseScoreBar"></div>
                                 </div>
                                 <span class="score-value" id="poseScore">0%</span>
                             </div>
                             <div class="score-bar">
-                                <span class="score-name">节奏</span>
+                                <span class="score-name">BEAT</span>
                                 <div class="progress-bar">
                                     <div class="progress-fill" id="rhythmScoreBar"></div>
                                 </div>
                                 <span class="score-value" id="rhythmScore">0%</span>
                             </div>
                             <div class="score-bar">
-                                <span class="score-name">手势</span>
+                                <span class="score-name">GESTURE</span>
                                 <div class="progress-bar">
                                     <div class="progress-fill" id="handScoreBar"></div>
                                 </div>
@@ -1031,15 +1033,15 @@
         <!-- 结果弹窗 -->
         <div id="resultModal" class="result-modal" style="display: none;">
             <div class="result-content">
-                <h2 class="result-title">🎉 舞蹈完成!</h2>
+                <h2 class="result-title">🎉 Completed!</h2>
                 <div class="result-score" id="finalScore">0</div>
-                <div class="result-rating" id="finalRating">👍 不错哦</div>
+                <div class="result-rating" id="finalRating">👍 Good</div>
                 <div class="result-actions">
                     <button class="control-button" id="playAgainBtn">
-                        <i class="fas fa-redo"></i> 再来一次
+                        <i class="fas fa-redo"></i> Restart
                     </button>
                     <button class="control-button" id="closeResultBtn">
-                        <i class="fas fa-home"></i> 返回主页
+                        <i class="fas fa-home"></i> Return
                     </button>
                 </div>
             </div>
@@ -1392,18 +1394,26 @@
         // 处理得分更新
         function handleScoreUpdate(data) {
             if (data.current_scores) {
-                appState.currentScores = data.current_scores;
-                updateScoreDisplay();
-                
-                // 更新障碍得分显示
-                if (data.current_scores.obstacle_score !== undefined) {
-                    elements.obstacleScoreValue.textContent = data.current_scores.obstacle_score;
+                // 随机生成节奏分和手势分（后续集成后端再替换）
+                let scores = { ...data.current_scores };
+                if (typeof scores.rhythm_score !== 'number') {
+                    // 节奏分 0.6~1.0
+                    scores.rhythm_score = (Math.random() * 0.4 + 0.6).toFixed(2) * 1;
                 }
-                
+                if (typeof scores.hand_score !== 'number') {
+                    // 手势分 0.5~0.95
+                    scores.hand_score = (Math.random() * 0.45 + 0.5).toFixed(2) * 1;
+                }
+                appState.currentScores = scores;
+                updateScoreDisplay();
+                // 更新障碍得分显示
+                if (scores.obstacle_score !== undefined) {
+                    elements.obstacleScoreValue.textContent = scores.obstacle_score;
+                }
                 // 记录总分历史
-                if (typeof data.current_scores.total_score === 'number') {
+                if (typeof scores.total_score === 'number') {
                     totalScoreHistory.push({
-                        score: data.current_scores.total_score,
+                        score: scores.total_score,
                         ts: Date.now()
                     });
                 }
@@ -1414,7 +1424,7 @@
             }
 
             // 检查是否触发完美特效
-            if (data.current_scores && data.current_scores.total_score > 90) {
+            if (appState.currentScores && appState.currentScores.total_score > 90) {
                 triggerPerfectEffect();
             }
         }
