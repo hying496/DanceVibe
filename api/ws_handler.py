@@ -16,13 +16,13 @@ from pathlib import Path
 
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
-sys.path.append(str(project_root / 'detector'))
-sys.path.append(str(project_root / 'score'))
+sys.path.append(str(project_root / 'score'))  # 添加score文件夹
 
+# 从 api 文件夹导入
 from api.model import Keypoint, Landmarks
 from api.utils import decode_base64_image, encode_image_to_base64, pad_landmarks, draw_landmarks
 
-# 导入障碍物管理 - 使用try-except避免导入错误
+# 从 score 文件夹导入障碍物管理 - 使用try-except避免导入错误
 try:
     from extra_obstacles import ObstacleManager
     print("✅ 障碍物管理器导入成功")
@@ -31,10 +31,7 @@ except ImportError as e:
     print(f"⚠️ 障碍物管理器导入失败: {e}")
     obstacle_available = False
 
-# 强制导入所有必要的模块
-print("🔄 正在导入必要模块...")
-
-# 1. 导入姿态检测模块
+# 导入检测器模块
 try:
     from detector.pose_detector import DetectorType, PoseDetectionManager
     print("✅ 姿态检测模块导入成功")
@@ -44,7 +41,7 @@ except ImportError as e:
     traceback.print_exc()
     detector_available = False
 
-# 2. 导入评分模块
+# 导入评分模块
 try:
     from score.similarity import calculate_pose_similarity
     from score.score_pose import score_pose
@@ -58,73 +55,78 @@ except ImportError as e:
     traceback.print_exc()
     score_available = False
 
-# 3. 提供备用实现
+# 提供备用实现
 if not detector_available:
     print("⚠️ 使用备用检测器实现")
-
     class DetectorType:
         MEDIAPIPE = "mediapipe"
-
+    
     class PoseDetectionManager:
         def __init__(self, detector_type):
             self.detector_type = detector_type
             print(f"⚠️ 使用备用检测器: {detector_type}")
-
+        
         def detect_poses(self, frame):
-            # 返回空的检测结果
             return [], {"processing_time_ms": 10}
 
 if not score_available:
     print("⚠️ 使用备用评分实现")
-
     def calculate_pose_similarity(lm1, lm2):
         return 0.8
-
+    
     def score_pose(pose_score, delta_t):
         return pose_score * 0.9
-
+    
     def mp4_2_mp3(video_path):
         return ""
-
+    
     def get_beats(audio_path):
         return 120, [], []
-
+    
     def match_motion_to_beats(motion, beats):
         return []
-
+    
     class CumulativeScore:
         def __init__(self):
             self.scores = []
             self.average = 0.0
-
+        
         def update(self, score):
             self.scores.append(score)
             self.average = sum(self.scores) / len(self.scores)
-
+        
         def reset(self):
             self.scores = []
             self.average = 0.0
 
 if not obstacle_available:
     print("⚠️ 使用备用障碍物管理器")
-    
     class ObstacleManager:
         def __init__(self, frame_size=(640, 480)):
             self.frame_width, self.frame_height = frame_size
             self.active_obstacles = []
-            
+            self.sync_time = 0.0
+            self.sync_enabled = False
+        
+        def set_sync_time(self, sync_time):
+            self.sync_time = sync_time
+            self.sync_enabled = True
+        
+        def set_difficulty(self, level):
+            pass
+        
         def spawn_obstacle(self):
             return None
-            
+        
         def update_obstacles(self):
             return []
-            
+        
         def check_collision(self, obstacle, landmarks):
             return None
-            
+        
         def deactivate_obstacle(self, obstacle_id):
             pass
-            
+        
         def reset(self):
             self.active_obstacles = []
 
@@ -178,6 +180,12 @@ class GameSession:
         self.start_time: Optional[float] = None
         self.frame_count: int = 0
         
+        # 🔄 同步状态管理
+        self.sync_enabled: bool = False
+        self.sync_start_time: Optional[float] = None
+        self.webcam_first_frame: bool = False
+        self.reference_synced: bool = False
+        
         # 创建两个完全独立的检测器实例
         try:
             self.pose_manager_reference = PoseDetectionManager(DetectorType.MEDIAPIPE)
@@ -195,9 +203,53 @@ class GameSession:
         self.person_trackers: Dict[int, PersonScoreTracker] = {}
         self.cumulative_score = CumulativeScore()
         self.score_history: List[float] = []
-        
+
         # 障碍物管理器
         self.obstacle_manager = ObstacleManager(frame_size=(640, 480))
+        
+        # 🔄 新增：为障碍物管理器设置默认难度
+        self.obstacle_manager.set_difficulty('Easy')
+        
+        # 🔄 新增：同步状态管理（如果你之前没有添加）
+        self.sync_enabled = False
+        self.sync_start_time = None
+        self.time_offset = 0.0 # 用于同步时间校正
+        
+        
+    
+    def reset_sync_state(self):
+        """重置同步状态"""
+        self.sync_enabled = False
+        self.sync_start_time = None
+        self.webcam_first_frame = False
+        self.reference_synced = False
+        self.time_offset = 0.0
+        print("🔄 同步状态已重置")
+
+    # 🔄 新增：添加同步方法
+    def enable_sync(self, sync_start_time: float):
+        """启用同步模式"""
+        self.sync_enabled = True
+        self.sync_start_time = sync_start_time
+        self.time_offset = time.time() - sync_start_time
+        print(f"🔄 同步模式已启用: {sync_start_time}")
+    
+    def get_sync_time(self, client_time: float = None) -> float:
+        """获取同步时间"""
+        if client_time is not None and self.sync_enabled:
+            return client_time
+        
+        if self.sync_enabled and self.sync_start_time:
+            current_time = time.time()
+            return current_time - self.time_offset
+        
+        return time.time() - (self.start_time or time.time())
+    
+    def reset_sync(self):
+        """重置同步状态"""
+        self.sync_enabled = False
+        self.sync_start_time = None
+        self.time_offset = 0.0
 
 
 # 连接管理
@@ -249,6 +301,8 @@ async def handle_message(msg: Dict, websocket: WebSocket, session: GameSession):
         await handle_upload_reference_video(msg, websocket, session)
     elif event == 'start_game':
         await handle_start_game(msg, websocket, session)
+    elif event == 'sync_start':
+        await handle_sync_start(msg, websocket, session)
     elif event == 'pause_game':
         await handle_pause_game(websocket, session)
     elif event == 'resume_game':
@@ -259,13 +313,50 @@ async def handle_message(msg: Dict, websocket: WebSocket, session: GameSession):
         print(f"❓ 未知事件: {event}")
 
 
+async def handle_sync_start(msg: Dict, websocket: WebSocket, session: GameSession):
+    """处理同步开始信号"""
+    timestamp = msg.get('timestamp')
+    
+    if timestamp and session.sync_enabled:
+        session.sync_start_time = timestamp / 1000.0  # 转换为秒
+        session.webcam_first_frame = True
+        session.time_offset = time.time() - session.sync_start_time
+        
+        print(f"🔄 同步开始 - 时间基准: {session.sync_start_time}, 偏移: {session.time_offset:.3f}s")
+        
+        # 通知前端同步已建立
+        await websocket.send_json({
+            'event': 'sync_established',
+            'sync_time': session.sync_start_time,
+            'time_offset': session.time_offset
+        })
+
+
 async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
-    """处理视频帧 - 回到同步处理方式"""
+    """处理视频帧 - 支持同步"""
     frame_type = msg.get('frame_type', 'webcam')
     image_data = msg.get('image', '')
     current_time = msg.get('current_time', 0.0)
+    sync_enabled = msg.get('sync_enabled', False)
+    sync_timestamp = msg.get('sync_timestamp')
 
-    print(f"🎬 处理{frame_type}帧")
+
+    # 🔄 在帧处理开始时添加同步时间设置
+    sync_time = session.get_sync_time(msg.get('current_time'))
+    
+    # 🔄 为障碍物管理器设置同步时间
+    if hasattr(session.obstacle_manager, 'set_sync_time'):
+        session.obstacle_manager.set_sync_time(sync_time)
+
+    # 🔄 同步时间处理
+    if sync_enabled and sync_timestamp:
+        # 使用前端传来的同步时间
+        sync_time = current_time
+    else:
+        # 使用服务器时间
+        sync_time = session.get_sync_time(current_time)
+
+    print(f"🎬 处理{frame_type}帧 - 同步时间: {sync_time:.3f}s")
 
     if not image_data:
         print("❌ 图片数据为空")
@@ -298,7 +389,7 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
         # 姿态检测
         start_time = time.time()
         persons, det_info = pose_manager.detect_poses(frame)
-        processing_time = (time.time() - start_time) * 1000
+        processing_time = (start_time - time.time()) * 1000
 
         print(f"🔍 姿态检测完成，检测到 {len(persons) if persons else 0} 人")
 
@@ -357,7 +448,8 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
             'type': frame_type,
             'image': vis_img_b64,
             'persons_detected': len(persons) if persons else 0,
-            'processing_time_ms': processing_time,
+            'processing_time_ms': abs(processing_time),
+            'sync_time': sync_time,
             'persons_keypoints_count': [
                 sum(1 for kp in landmarks if getattr(kp, 'visible', True))
                 for landmarks in all_landmarks
@@ -369,10 +461,12 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
             session.reference_landmarks = all_landmarks[0]
             print(f"📹 参考视频主舞者关键点已保存")
 
-        # 处理用户帧并计算多人分数 + 障碍物
+        # 处理用户帧并计算多人分数 + 障碍物（使用同步时间）
         elif frame_type == 'webcam' and session.reference_landmarks and all_landmarks:
-            print(f"🎯 开始计算多人分数+障碍物，共{len(all_landmarks)}人")
-            await calculate_multi_person_scores_with_obstacles(all_landmarks, current_time, websocket, session, persons)
+            print(f"🎯 开始计算多人分数+障碍物，共{len(all_landmarks)}人，同步时间: {sync_time:.3f}s")
+            await calculate_multi_person_scores_with_obstacles(
+                all_landmarks, sync_time, websocket, session, persons
+            )
 
     except Exception as e:
         print(f"❌ 帧处理错误: {e}")
@@ -383,30 +477,38 @@ async def handle_frame(msg: Dict, websocket: WebSocket, session: GameSession):
         })
 
 
-async def calculate_multi_person_scores_with_obstacles(all_landmarks: List[List[Keypoint]], current_time: float,
-                                                     websocket: WebSocket, session: GameSession, persons):
-    """计算多人分数 + 障碍物检测"""
+async def calculate_multi_person_scores_with_obstacles(all_landmarks: List[List[Keypoint]], 
+                                                     sync_time: float,
+                                                     websocket: WebSocket, 
+                                                     session: GameSession, 
+                                                     persons):
+    """计算多人分数 + 障碍物检测 - 支持同步时间"""
     if not session.game_started or session.game_paused:
         return
 
     try:
-        # 1. 更新障碍物状态
+        # 🎯 1. 基于同步时间更新障碍物状态
+        if hasattr(session.obstacle_manager, 'set_sync_time'):
+            session.obstacle_manager.set_sync_time(sync_time)
+        
         obstacles = session.obstacle_manager.update_obstacles()
         
-        # 2. 尝试生成新障碍物
+        # 2. 尝试生成新障碍物（基于同步时间）
         new_obstacle = session.obstacle_manager.spawn_obstacle()
         if new_obstacle:
-            print(f"🎯 生成新障碍物: {new_obstacle['id']}")
+            print(f"🎯 生成新障碍物: {new_obstacle['id']} at {sync_time:.3f}s")
             await websocket.send_json({
                 'event': 'obstacle_spawn',
-                'obstacle': new_obstacle
+                'obstacle': new_obstacle,
+                'sync_time': sync_time
             })
 
         # 3. 发送障碍物更新
         if obstacles:
             await websocket.send_json({
                 'event': 'obstacle_update',
-                'obstacles': obstacles
+                'obstacles': obstacles,
+                'sync_time': sync_time
             })
 
         # 4. 处理每个人的分数
@@ -424,12 +526,12 @@ async def calculate_multi_person_scores_with_obstacles(all_landmarks: List[List[
             try:
                 pose_score = calculate_pose_similarity(session.reference_landmarks, user_landmarks) or 0.0
 
-                # 计算节奏分数
+                # 🎵 基于同步时间计算节奏分数
                 rhythm_score = 0.0
-                if session.beat_times and session.start_time:
-                    relative_time = current_time - (time.time() - session.start_time)
+                if session.beat_times:
                     if session.beat_times:
-                        delta_t = min([abs(relative_time - bt) for bt in session.beat_times])
+                        # 使用同步时间计算节拍匹配
+                        delta_t = min([abs(sync_time - bt) for bt in session.beat_times])
                         rhythm_score = max(0, 1 - delta_t / 0.4)
 
                 # 手势分数
@@ -451,7 +553,8 @@ async def calculate_multi_person_scores_with_obstacles(all_landmarks: List[List[
                                 'person_id': person_id,
                                 'result': collision_result['result'],
                                 'score_change': collision_result['score_change'],
-                                'display': collision_result['display']
+                                'display': collision_result['display'],
+                                'sync_time': sync_time
                             })
                             
                             # 禁用已碰撞的障碍物
@@ -507,11 +610,17 @@ async def calculate_multi_person_scores_with_obstacles(all_landmarks: List[List[
             },
             'average_score': round(session.cumulative_score.average * 100, 2),
             'frame_count': session.frame_count,
-            'persons_detected': len(person_scores)
+            'persons_detected': len(person_scores),
+            'sync_time': sync_time
         })
 
-        # 自动结束游戏（60秒后）
-        if session.start_time and (time.time() - session.start_time) > 60:
+        # 🕒 基于同步时间的自动结束游戏逻辑
+        if session.sync_enabled and session.sync_start_time:
+            game_duration = sync_time
+            if game_duration > 60:  # 60秒后自动结束
+                print(f"⏰ 游戏时间达到60秒，自动结束 (实际时长: {game_duration:.1f}s)")
+                await handle_stop_game(websocket, session)
+        elif session.start_time and (time.time() - session.start_time) > 60:
             await handle_stop_game(websocket, session)
 
     except Exception as e:
@@ -558,7 +667,8 @@ async def handle_upload_reference_video(msg: Dict, websocket: WebSocket, session
             await websocket.send_json({
                 'event': 'reference_ready',
                 'beat_count': len(session.beat_times),
-                'tempo': float(tempo) if hasattr(tempo, 'item') else tempo
+                'tempo': float(tempo) if hasattr(tempo, 'item') else tempo,
+                'beat_times': session.beat_times[:10]  # 发送前10个节拍点用于调试
             })
 
         except Exception as e:
@@ -580,6 +690,7 @@ async def handle_upload_reference_video(msg: Dict, websocket: WebSocket, session
         })
 
 
+# 在 handle_start_game 函数中，添加难度设置：
 async def handle_start_game(msg: Dict, websocket: WebSocket, session: GameSession):
     """开始游戏"""
     session.selected_dance = msg.get('dance', session.selected_dance)
@@ -592,13 +703,20 @@ async def handle_start_game(msg: Dict, websocket: WebSocket, session: GameSessio
     session.cumulative_score.reset()
     session.person_trackers.clear()
     
+    # 🔄 新增：启用同步模式
+    session.sync_enabled = True
+    
+    # 🎯 新增：设置障碍物管理器难度
+    session.obstacle_manager.set_difficulty(session.level)
+    
     # 重置障碍物管理器
     session.obstacle_manager.reset()
 
     await websocket.send_json({
         'event': 'game_started',
         'dance': session.selected_dance,
-        'level': session.level
+        'level': session.level,
+        'sync_enabled': session.sync_enabled
     })
     print(f"🎮 游戏开始: {session.selected_dance['name']} 难度: {session.level}")
 
@@ -624,13 +742,17 @@ async def handle_stop_game(websocket: WebSocket, session: GameSession):
     session.game_started = False
     session.game_paused = False
     
+    # 重置同步状态
+    session.reset_sync_state()
+    
     # 重置障碍物管理器
     session.obstacle_manager.reset()
 
     await websocket.send_json({
         'event': 'game_stopped',
         'final_score': round(final_score, 2),
-        'total_persons': len(session.person_trackers)
+        'total_persons': len(session.person_trackers),
+        'sync_disabled': True
     })
 
     print(f"🛑 游戏结束，最终得分: {final_score:.2f}，共{len(session.person_trackers)}人参与")

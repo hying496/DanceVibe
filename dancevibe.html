@@ -5,10 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DanceVibe - 舞动青春</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="styles.css">
     <style>
-        /* 保持原有的所有CSS样式 */
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-
         * {
             margin: 0;
             padding: 0;
@@ -190,6 +189,11 @@
             color: #d63384;
         }
 
+        .video-badge.syncing {
+            background: var(--macaron-lemon);
+            color: var(--black);
+        }
+
         .video-frame {
             width: 100%;
             height: 500px;
@@ -224,6 +228,29 @@
         /* 摄像头画面镜像显示 */
         #userVideo {
             transform: scaleX(-1);
+        }
+
+        /* 同步状态指示器 */
+        .sync-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 0.3rem 0.6rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            z-index: 10;
+        }
+
+        .sync-indicator.waiting {
+            background: rgba(255, 193, 7, 0.8);
+            color: black;
+        }
+
+        .sync-indicator.synced {
+            background: rgba(40, 167, 69, 0.8);
         }
 
         /* 优化后的障碍框显示 */
@@ -863,6 +890,11 @@
                             <p>Click 'Open' to select a reference dance video</p>
                         </div>
 
+                        <!-- 同步状态指示器 -->
+                        <div class="sync-indicator waiting" id="referenceSyncIndicator" style="display: none;">
+                            <i class="fas fa-clock"></i> Waiting for sync...
+                        </div>
+
                         <!-- 本地参考视频播放 -->
                         <video id="referenceVideo" class="video-display" style="display:none;" muted></video>
 
@@ -911,6 +943,11 @@
                             <button id="retryCamera" class="control-button" style="margin-top: 1rem; padding: 0.5rem 1rem; font-size: 0.9rem; display: none;">
                                 <i class="fas fa-redo"></i> Retry
                             </button>
+                        </div>
+
+                        <!-- 同步状态指示器 -->
+                        <div class="sync-indicator waiting" id="webcamSyncIndicator" style="display: none;">
+                            <i class="fas fa-sync-alt"></i> Syncing...
                         </div>
 
                         <!-- 用户摄像头视频流 -->
@@ -1064,6 +1101,13 @@
             beatTimesLoaded: false,
             beatCount: 0,
 
+            // 同步状态
+            syncEnabled: false,
+            webcamFirstFrame: false,
+            referenceSynced: false,
+            syncStartTime: null,
+            gameStartTime: null,
+
             // 得分数据
             currentScores: {
                 pose_score: 0,
@@ -1089,12 +1133,13 @@
             referencePlaying: false,
             referenceVisible: true,
             referenceFrameTimer: null,
+            referenceEndTimer: null,
 
             // 性能统计
             currentFPS: 0,
             latency: 0,
             personsDetected: 0,
-            showReferenceSkeleton: true // 新增：控制参考视频是否显示骨架
+            showReferenceSkeleton: true
         };
 
         // 障碍物管理
@@ -1118,12 +1163,15 @@
             referenceVideo: document.getElementById('referenceVideo'),
             referenceFrame: document.getElementById('referenceFrame'),
 
+            // 同步指示器
+            referenceSyncIndicator: document.getElementById('referenceSyncIndicator'),
+            webcamSyncIndicator: document.getElementById('webcamSyncIndicator'),
+
             userVideo: document.getElementById('userVideo'),
             cameraPlaceholder: document.getElementById('cameraPlaceholder'),
             cameraStatus: document.getElementById('cameraStatus'),
             retryCamera: document.getElementById('retryCamera'),
             processedFrame: document.getElementById('processedFrame'),
-            // 新增：too close 提示容器
             tooCloseTip: null,
 
             // 障碍相关
@@ -1194,9 +1242,8 @@
                 tip.style.textAlign = 'center';
                 tip.style.letterSpacing = '0.1em';
                 tip.style.userSelect = 'none';
-                // 马卡龙色系边框
                 tip.style.border = '3px solid #FFD4B5';
-                // 添加到摄像头 video-container
+                
                 const webcamContainer = elements.userVideo.closest('.video-container');
                 if (webcamContainer) {
                     webcamContainer.appendChild(tip);
@@ -1211,6 +1258,64 @@
             if (elements.tooCloseTip) {
                 elements.tooCloseTip.style.display = show ? 'block' : 'none';
             }
+        }
+
+        // 同步管理函数
+        function initSync() {
+            appState.syncEnabled = true;
+            appState.webcamFirstFrame = false;
+            appState.referenceSynced = false;
+            appState.syncStartTime = null;
+            
+            // 显示同步指示器
+            elements.referenceSyncIndicator.style.display = 'block';
+            elements.webcamSyncIndicator.style.display = 'block';
+            
+            console.log('🔄 同步模式已启用');
+        }
+
+        function onWebcamFirstFrame() {
+            if (!appState.syncEnabled || appState.webcamFirstFrame) return;
+            
+            appState.webcamFirstFrame = true;
+            appState.syncStartTime = Date.now();
+            
+            // 更新同步指示器
+            elements.webcamSyncIndicator.className = 'sync-indicator synced';
+            elements.webcamSyncIndicator.innerHTML = '<i class="fas fa-check"></i> Synced';
+            
+            // 通知后端开始同步
+            sendWebSocketMessage({
+                event: 'sync_start',
+                timestamp: appState.syncStartTime
+            });
+            
+            // 启动参考视频播放
+            if (appState.referenceVideoFile && !appState.referencePlaying) {
+                setTimeout(() => {
+                    startReferenceVideoSync();
+                }, 100); // 小延迟确保同步
+            }
+            
+            console.log('✅ 摄像头首帧同步完成');
+        }
+
+        function startReferenceVideoSync() {
+            if (!appState.syncEnabled || appState.referenceSynced) return;
+            
+            appState.referenceSynced = true;
+            
+            // 更新同步指示器
+            elements.referenceSyncIndicator.className = 'sync-indicator synced';
+            elements.referenceSyncIndicator.innerHTML = '<i class="fas fa-check"></i> Synced';
+            
+            // 启动参考视频
+            if (elements.referenceVideo) {
+                elements.referenceVideo.currentTime = 0;
+                elements.referenceVideo.play();
+            }
+            
+            console.log('✅ 参考视频同步播放开始');
         }
 
         // 初始化应用
@@ -1315,6 +1420,8 @@
                 case 'game_started':
                     console.log('🎮 游戏开始');
                     appState.gameStarted = true;
+                    appState.gameStartTime = Date.now();
+                    initSync(); // 启用同步模式
                     updateGameControls();
                     break;
                 case 'game_paused':
@@ -1328,8 +1435,10 @@
                 case 'game_stopped':
                     appState.gameStarted = false;
                     appState.gamePaused = false;
+                    appState.syncEnabled = false;
                     clearObstacles();
                     updateGameControls();
+                    hideSyncIndicators();
                     break;
                 case 'reference_ready':
                     appState.referenceReady = true;
@@ -1344,17 +1453,24 @@
             }
         }
 
+        // 隐藏同步指示器
+        function hideSyncIndicators() {
+            elements.referenceSyncIndicator.style.display = 'none';
+            elements.webcamSyncIndicator.style.display = 'none';
+        }
+
         // 处理帧结果
         function handleFrameResult(data) {
             if (data.type === 'webcam') {
-                // 摄像头区域只显示原始视频流，不再显示骨架图像
-                // elements.processedFrame.src = data.image;
-                // elements.processedFrame.style.display = 'block';
-                // 只更新人数和延迟等性能数据
+                // 摄像头首帧同步检测
+                if (appState.syncEnabled && !appState.webcamFirstFrame && data.persons_detected > 0) {
+                    onWebcamFirstFrame();
+                }
+
                 appState.personsDetected = data.persons_detected || 0;
                 appState.latency = data.processing_time_ms || 0;
 
-                // 检查关键点数量，若小于22则弹出提示
+                // 检查关键点数量
                 if (data.persons_detected > 0 && Array.isArray(data.persons_keypoints_count)) {
                     const kpCount = data.persons_keypoints_count[0] || 0;
                     showTooCloseTip(kpCount < 22);
@@ -1371,9 +1487,8 @@
 
                 updatePerformanceStats();
             } else if (data.type === 'reference') {
-                // 参考视频骨架和原视频互斥显示，由 toggleReferenceVisible 控制
                 elements.referenceFrame.src = data.image;
-                // 只在显示骨架时展示 referenceFrame
+                
                 if (appState.referencePlaying || appState.referenceVisible) {
                     if (appState.showReferenceSkeleton !== false) {
                         elements.referenceFrame.style.display = 'block';
@@ -1386,6 +1501,7 @@
                     elements.referenceFrame.style.display = 'none';
                     elements.referenceVideo.style.display = 'none';
                 }
+                
                 appState.referenceDetected = data.persons_detected > 0;
                 updateStatusIndicators();
             }
@@ -1394,23 +1510,20 @@
         // 处理得分更新
         function handleScoreUpdate(data) {
             if (data.current_scores) {
-                // 随机生成节奏分和手势分（后续集成后端再替换）
                 let scores = { ...data.current_scores };
                 if (typeof scores.rhythm_score !== 'number') {
-                    // 节奏分 0.6~1.0
                     scores.rhythm_score = (Math.random() * 0.4 + 0.6).toFixed(2) * 1;
                 }
                 if (typeof scores.hand_score !== 'number') {
-                    // 手势分 0.5~0.95
                     scores.hand_score = (Math.random() * 0.45 + 0.5).toFixed(2) * 1;
                 }
                 appState.currentScores = scores;
                 updateScoreDisplay();
-                // 更新障碍得分显示
+                
                 if (scores.obstacle_score !== undefined) {
                     elements.obstacleScoreValue.textContent = scores.obstacle_score;
                 }
-                // 记录总分历史
+                
                 if (typeof scores.total_score === 'number') {
                     totalScoreHistory.push({
                         score: scores.total_score,
@@ -1418,18 +1531,19 @@
                     });
                 }
             }
+            
             if (data.average_score !== undefined) {
                 appState.averageScore = data.average_score;
                 elements.averageScore.textContent = Math.round(appState.averageScore);
             }
 
-            // 检查是否触发完美特效
+            // 完美特效
             if (appState.currentScores && appState.currentScores.total_score > 90) {
                 triggerPerfectEffect();
             }
         }
 
-        // 处理障碍生成
+        // 障碍物相关函数
         function handleObstacleSpawn(data) {
             const obstacle = data.obstacle;
             if (obstacle) {
@@ -1439,38 +1553,31 @@
             }
         }
 
-        // 处理障碍更新
         function handleObstacleUpdate(data) {
             const obstacleList = data.obstacles || [];
-            // 更新/移除障碍
             const ids = new Set();
             obstacleList.forEach(obs => {
                 obstacles[obs.id] = obs;
                 ids.add(obs.id);
             });
-            // 移除已消失障碍
             Object.keys(obstacles).forEach(id => {
                 if (!ids.has(id)) delete obstacles[id];
             });
             renderObstacles();
         }
 
-        // 处理障碍得分
         function handleObstacleScore(data) {
             const { person_id, result, score_change, display } = data;
             
             console.log(`🎯 障碍得分: Person ${person_id}, 结果: ${result}, 分数变化: ${score_change}`);
             
-            // 显示分数变化效果
             if (display) {
                 showScoreChangeEffect(display);
             }
             
-            // 播放音效（如果有）
             playScoreSound(result);
         }
 
-        // 渲染障碍物 - 优化版本
         function renderObstacles() {
             const container = elements.obstacleContainer;
             if (!container) return;
@@ -1482,7 +1589,6 @@
                 const [x, y] = position;
                 const [w, h] = size;
                 
-                // 创建障碍框元素
                 const div = document.createElement('div');
                 div.className = 'obstacle-box ' + pattern.type + (blinking ? ' blinking' : '');
                 div.style.left = x + 'px';
@@ -1490,7 +1596,6 @@
                 div.style.width = w + 'px';
                 div.style.height = h + 'px';
                 
-                // 创建图标和标签
                 const icon = document.createElement('div');
                 icon.className = 'obstacle-icon';
                 icon.textContent = pattern.icon;
@@ -1502,7 +1607,6 @@
                 div.appendChild(icon);
                 div.appendChild(label);
                 
-                // 添加进度条
                 const progressBar = document.createElement('div');
                 progressBar.className = 'obstacle-progress';
                 progressBar.style.width = `${((1 - (progress || 0)) * 100)}%`;
@@ -1512,7 +1616,6 @@
             });
         }
 
-        // 显示分数变化效果 - 优化版本
         function showScoreChangeEffect(display) {
             const container = elements.scoreChangeContainer;
             if (!container) return;
@@ -1521,7 +1624,6 @@
             effect.className = 'score-change';
             effect.innerHTML = `<span>${display.icon || ''}</span> ${display.text || ''}`;
             
-            // 根据分数变化类型设置CSS类
             if (display.text && display.text.includes('+')) {
                 effect.classList.add('positive');
             } else if (display.text && display.text.includes('-')) {
@@ -1530,13 +1632,11 @@
                 effect.classList.add('miss');
             }
             
-            // 设置随机位置
             effect.style.left = `${Math.random() * 60 + 20}%`;
             effect.style.top = `${Math.random() * 60 + 20}%`;
             
             container.appendChild(effect);
             
-            // 自动移除
             setTimeout(() => {
                 if (effect.parentNode) {
                     effect.parentNode.removeChild(effect);
@@ -1544,10 +1644,8 @@
             }, display.duration || 2000);
         }
 
-        // 播放得分音效
         function playScoreSound(result) {
             try {
-                // 这里可以添加音效播放逻辑
                 if (result === 'hit') {
                     console.log('🔊 播放成功音效');
                 } else if (result === 'fail') {
@@ -1558,7 +1656,6 @@
             }
         }
 
-        // 清理所有障碍
         function clearObstacles() {
             obstacles = {};
             if (elements.obstacleContainer) {
@@ -1581,7 +1678,7 @@
             }
         }
 
-        // 初始化摄像头
+        // 摄像头相关函数
         async function initCamera(callback) {
             try {
                 elements.cameraPlaceholder.querySelector('p').textContent = '正在获取摄像头权限...';
@@ -1592,7 +1689,7 @@
                         width: { ideal: 640 },
                         height: { ideal: 480 },
                         facingMode: 'user',
-                        frameRate: { ideal: 15, max: 20 }  // 提高帧率
+                        frameRate: { ideal: 15, max: 20 }
                     }
                 });
 
@@ -1632,7 +1729,6 @@
             }
         }
 
-        // 显示摄像头错误
         function showCameraError(message) {
             appState.cameraReady = false;
             elements.cameraPlaceholder.querySelector('p').textContent = message;
@@ -1640,7 +1736,6 @@
             updateCameraStatus();
         }
 
-        // 开始视频捕获 - 优化版本
         function startVideoCapture() {
             if (!elements.userVideo || !appState.wsConnected) {
                 console.log('⚠️ 视频捕获条件不满足');
@@ -1652,7 +1747,7 @@
             const ctx = canvas.getContext('2d');
             
             let lastCaptureTime = 0;
-            const captureInterval = 66; // 约15FPS，优化性能
+            const captureInterval = 66;
 
             const captureFrame = () => {
                 if (!appState.cameraReady || !appState.wsConnected || !elements.userVideo) {
@@ -1684,16 +1779,22 @@
                         if (blob && appState.wsConnected) {
                             const reader = new FileReader();
                             reader.onload = () => {
+                                const currentTime = appState.syncEnabled && appState.syncStartTime 
+                                    ? (Date.now() - appState.syncStartTime) / 1000 
+                                    : (Date.now() / 1000);
+                                
                                 sendWebSocketMessage({
                                     event: 'frame',
                                     frame_type: 'webcam',
                                     image: reader.result,
-                                    current_time: elements.userVideo.currentTime || (Date.now() / 1000)
+                                    current_time: currentTime,
+                                    sync_enabled: appState.syncEnabled,
+                                    sync_timestamp: appState.syncStartTime
                                 });
                             };
                             reader.readAsDataURL(blob);
                         }
-                    }, 'image/jpeg', 0.7);  // 提高质量
+                    }, 'image/jpeg', 0.7);
                 } catch (err) {
                     console.error('帧捕获错误:', err);
                 }
@@ -1702,45 +1803,6 @@
             };
 
             captureFrame();
-        }
-
-        // 初始化事件监听器
-        function initEventListeners() {
-            // 参考视频控制
-            elements.openReferenceBtn.addEventListener('click', () => {
-                elements.referenceInput.click();
-            });
-
-            elements.referenceInput.addEventListener('change', onReferenceVideoChange);
-            elements.startReferenceBtn.addEventListener('click', startReferenceVideo);
-            elements.stopReferenceBtn.addEventListener('click', stopReferenceVideo);
-            elements.toggleReferenceBtn.addEventListener('click', toggleReferenceVisible);
-
-            // 参考视频声音开关
-            document.getElementById('referenceSoundBtn').addEventListener('click', toggleReferenceSound);
-
-            // 摄像头控制
-            elements.retryCamera.addEventListener('click', () => {
-                appState.cameraReady = false;
-                elements.retryCamera.style.display = 'none';
-                initCamera();
-            });
-
-            // 游戏控制
-            elements.startGameBtn.addEventListener('click', startGame);
-            elements.pauseGameBtn.addEventListener('click', pauseGame);
-            elements.resumeGameBtn.addEventListener('click', resumeGame);
-            elements.stopGameBtn.addEventListener('click', stopGame);
-            elements.stopDanceBtn.addEventListener('click', stopDance);
-
-            // 结果弹窗
-            elements.playAgainBtn.addEventListener('click', playAgain);
-            elements.closeResultBtn.addEventListener('click', closeResult);
-
-            // 参考视频事件
-            elements.referenceVideo.addEventListener('play', onReferencePlay);
-            elements.referenceVideo.addEventListener('pause', onReferencePause);
-            elements.referenceVideo.addEventListener('ended', onReferenceEnded);
         }
 
         // 参考视频相关函数
@@ -1758,7 +1820,6 @@
                 elements.startReferenceBtn.disabled = false;
                 elements.toggleReferenceBtn.disabled = false;
 
-                // 上传参考视频到后端
                 const reader = new FileReader();
                 reader.onload = () => {
                     sendWebSocketMessage({
@@ -1771,7 +1832,7 @@
         }
 
         function startReferenceVideo() {
-            if (elements.referenceVideo) {
+            if (elements.referenceVideo && !appState.syncEnabled) {
                 elements.referenceVideo.play();
             }
         }
@@ -1784,6 +1845,12 @@
                 elements.startReferenceBtn.disabled = false;
                 elements.stopReferenceBtn.disabled = true;
                 clearInterval(appState.referenceFrameTimer);
+                
+                // 清除结束定时器
+                if (appState.referenceEndTimer) {
+                    clearTimeout(appState.referenceEndTimer);
+                    appState.referenceEndTimer = null;
+                }
             }
         }
 
@@ -1793,12 +1860,10 @@
             const span = toggleBtn.querySelector('span');
 
             if (appState.showReferenceSkeleton) {
-                // 显示骨架，隐藏原视频
                 elements.referenceFrame.style.display = 'block';
                 elements.referenceVideo.style.display = 'none';
                 span.textContent = '隐藏';
             } else {
-                // 隐藏骨架，显示原视频
                 elements.referenceFrame.style.display = 'none';
                 elements.referenceVideo.style.display = 'block';
                 span.textContent = '显示';
@@ -1830,6 +1895,14 @@
             elements.referenceFrame.style.display = appState.referenceVisible ? 'block' : 'none';
             elements.referenceVideo.style.display = appState.referenceVisible ? 'block' : 'none';
             clearInterval(appState.referenceFrameTimer);
+            
+            // 5秒后显示游戏结束
+            if (appState.gameStarted && !appState.gamePaused) {
+                console.log('📹 参考视频结束，5秒后显示游戏结果');
+                appState.referenceEndTimer = setTimeout(() => {
+                    showGameResult();
+                }, 5000);
+            }
         }
 
         function sendReferenceFrames() {
@@ -1848,27 +1921,34 @@
                     if (blob) {
                         const reader = new FileReader();
                         reader.onload = () => {
+                            const currentTime = appState.syncEnabled && appState.syncStartTime 
+                                ? (Date.now() - appState.syncStartTime) / 1000 
+                                : elements.referenceVideo.currentTime;
+                            
                             sendWebSocketMessage({
                                 event: 'frame',
                                 frame_type: 'reference',
                                 image: reader.result,
-                                current_time: elements.referenceVideo.currentTime
+                                current_time: currentTime,
+                                sync_enabled: appState.syncEnabled,
+                                sync_timestamp: appState.syncStartTime
                             });
                         };
                         reader.readAsDataURL(blob);
                     }
                 }, 'image/jpeg', 0.7);
-            }, 100); // 10fps
+            }, 100);
         }
 
         // 游戏控制函数
         function startGame() {
             if (!appState.wsConnected) return;
-            // 1. 必须选择舞蹈难度
+            
             if (!appState.selectedDance || !appState.selectedDance.id) {
                 alert('请选择舞蹈难度！');
                 return;
             }
+            
             if (!appState.cameraReady) {
                 initCamera(() => {
                     showCountdown();
@@ -1895,6 +1975,10 @@
             totalScoreHistory = [];
             updateTotalScoreMacaron();
             if (totalScoreTimer) clearInterval(totalScoreTimer);
+            if (appState.referenceEndTimer) {
+                clearTimeout(appState.referenceEndTimer);
+                appState.referenceEndTimer = null;
+            }
             clearObstacles();
         }
 
@@ -1905,7 +1989,6 @@
             clearObstacles();
         }
 
-        // 显示倒计时
         function showCountdown() {
             let countdownNumber = 3;
             elements.countdown.style.display = 'flex';
@@ -1927,7 +2010,20 @@
             }, 1000);
         }
 
-        // 完美特效
+        function showGameResult() {
+            const finalScore = appState.averageScore;
+            const rating = getRating(finalScore);
+            
+            elements.finalScore.textContent = Math.round(finalScore);
+            elements.finalRating.textContent = rating;
+            elements.resultModal.style.display = 'flex';
+            
+            // 停止游戏
+            stopGame();
+            
+            console.log('🎉 显示游戏结果');
+        }
+
         function triggerPerfectEffect() {
             elements.perfectEffect.style.display = 'block';
             setTimeout(() => {
@@ -2019,7 +2115,6 @@
             elements.beatCount.textContent = appState.beatCount;
         }
 
-        // 结果相关函数
         function getRating(score) {
             if (score >= 90) return '🌟 传奇舞者';
             if (score >= 75) return '💫 舞蹈大师';
@@ -2041,6 +2136,13 @@
             updateScoreDisplay();
             elements.averageScore.textContent = '0';
             clearObstacles();
+            
+            // 重置同步状态
+            appState.syncEnabled = false;
+            appState.webcamFirstFrame = false;
+            appState.referenceSynced = false;
+            hideSyncIndicators();
+            
             startGame();
         }
 
@@ -2048,7 +2150,6 @@
             elements.resultModal.style.display = 'none';
         }
 
-        // 定时更新十秒平均分
         function updateTotalScoreMacaron() {
             const now = Date.now();
             totalScoreHistory = totalScoreHistory.filter(item => now - item.ts <= 10000);
@@ -2065,7 +2166,6 @@
             totalScoreTimer = setInterval(updateTotalScoreMacaron, 1000);
         }
 
-        // 参考视频声音开关
         let referenceMuted = true;
         function toggleReferenceSound() {
             referenceMuted = !referenceMuted;
@@ -2078,19 +2178,59 @@
             }
         }
 
+        // 初始化事件监听器
+        function initEventListeners() {
+            // 参考视频控制
+            elements.openReferenceBtn.addEventListener('click', () => {
+                elements.referenceInput.click();
+            });
+
+            elements.referenceInput.addEventListener('change', onReferenceVideoChange);
+            elements.startReferenceBtn.addEventListener('click', startReferenceVideo);
+            elements.stopReferenceBtn.addEventListener('click', stopReferenceVideo);
+            elements.toggleReferenceBtn.addEventListener('click', toggleReferenceVisible);
+
+            // 参考视频声音开关
+            document.getElementById('referenceSoundBtn').addEventListener('click', toggleReferenceSound);
+
+            // 摄像头控制
+            elements.retryCamera.addEventListener('click', () => {
+                appState.cameraReady = false;
+                elements.retryCamera.style.display = 'none';
+                initCamera();
+            });
+
+            // 游戏控制
+            elements.startGameBtn.addEventListener('click', startGame);
+            elements.pauseGameBtn.addEventListener('click', pauseGame);
+            elements.resumeGameBtn.addEventListener('click', resumeGame);
+            elements.stopGameBtn.addEventListener('click', stopGame);
+            elements.stopDanceBtn.addEventListener('click', stopDance);
+
+            // 结果弹窗
+            elements.playAgainBtn.addEventListener('click', playAgain);
+            elements.closeResultBtn.addEventListener('click', closeResult);
+
+            // 参考视频事件
+            elements.referenceVideo.addEventListener('play', onReferencePlay);
+            elements.referenceVideo.addEventListener('pause', onReferencePause);
+            elements.referenceVideo.addEventListener('ended', onReferenceEnded);
+        }
+
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', () => {
-            appState.showReferenceSkeleton = true; // 默认显示骨架
+            appState.showReferenceSkeleton = true;
             initApp();
-            // 确保摄像头骨架检测图片永远不显示
+            
             if (elements.processedFrame) {
                 elements.processedFrame.style.display = 'none';
             }
-            // 初始化 too close 提示
+            
             createTooCloseTip();
+            
+            // 默认参考视频静音
+            elements.referenceVideo.muted = true;
         });
-        // 默认参考视频静音
-        elements.referenceVideo.muted = true;
     </script>
 </body>
 </html>

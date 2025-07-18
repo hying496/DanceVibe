@@ -489,3 +489,71 @@ def convert_landmarks_format(landmarks: List[Keypoint],
         logger.error(f"关键点格式转换失败: {e}")
         return landmarks
 
+# 在你现有的 api/utils.py 文件末尾添加这个兼容性函数：
+
+def ensure_landmarks_format(landmarks: List[Keypoint]) -> List[Keypoint]:
+    """
+    确保关键点格式正确，用于同步优化
+    
+    Args:
+        landmarks: 关键点列表
+        
+    Returns:
+        格式化后的关键点列表
+    """
+    try:
+        if not landmarks:
+            return []
+        
+        # 确保每个关键点都有必要的属性
+        formatted = []
+        for lm in landmarks:
+            if hasattr(lm, 'x') and hasattr(lm, 'y'):
+                formatted.append(Keypoint(
+                    x=float(lm.x),
+                    y=float(lm.y),
+                    z=float(getattr(lm, 'z', 0.0)),
+                    confidence=float(getattr(lm, 'confidence', 1.0)),
+                    visible=bool(getattr(lm, 'visible', True))
+                ))
+            else:
+                # 如果格式不对，添加默认值
+                formatted.append(Keypoint(
+                    x=0.0, y=0.0, z=0.0,
+                    confidence=0.0, visible=False
+                ))
+        
+        return formatted
+        
+    except Exception as e:
+        logger.error(f"关键点格式化失败: {e}")
+        return landmarks
+
+
+def optimize_image_for_sync(image: np.ndarray, target_quality: float = 0.7) -> np.ndarray:
+    """
+    为同步优化图像质量
+    
+    Args:
+        image: 输入图像
+        target_quality: 目标质量 (0.1-1.0)
+        
+    Returns:
+        优化后的图像
+    """
+    try:
+        if image is None:
+            return image
+            
+        # 根据质量调整图像大小
+        if target_quality < 0.8:
+            h, w = image.shape[:2]
+            new_h = int(h * target_quality)
+            new_w = int(w * target_quality)
+            image = cv2.resize(image, (new_w, new_h))
+            
+        return image
+        
+    except Exception as e:
+        logger.error(f"图像优化失败: {e}")
+        return image

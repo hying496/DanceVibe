@@ -227,7 +227,7 @@ def format_score_display(score_change: int) -> Dict:
 
 
 class ObstacleManager:
-    """障碍管理器"""
+    """障碍管理器 - 升级版，支持同步"""
     
     def __init__(self, frame_size: Tuple[int, int] = (640, 480)):
         self.frame_width, self.frame_height = frame_size
@@ -237,17 +237,68 @@ class ObstacleManager:
         self.spawn_interval = 3.0  # 3秒间隔
         self.obstacle_duration = 4.0  # 障碍持续4秒
         
+        # 🔄 新增：同步相关属性
+        self.sync_time: float = 0.0
+        self.sync_enabled: bool = False
+        self.time_offset: float = 0.0
+        
+        # 🎯 新增：难度相关属性
+        self.difficulty_level = 'Easy'
+        self.spawn_probability = 0.7
+        self.max_active_obstacles = 3
+        
+        print("✅ 障碍管理器初始化完成")
+    
+    def set_sync_time(self, sync_time: float):
+        """🔄 新增：设置同步时间"""
+        self.sync_time = sync_time
+        self.sync_enabled = True
+        if not hasattr(self, 'sync_start_time'):
+            self.sync_start_time = sync_time
+    
+    def set_difficulty(self, level: str):
+        """🎯 新增：设置难度等级"""
+        self.difficulty_level = level
+        
+        difficulty_settings = {
+            'Easy': {'interval': 3.0, 'probability': 0.5, 'max_obstacles': 2},
+            'Medium': {'interval': 2.5, 'probability': 0.6, 'max_obstacles': 3},
+            'Hard': {'interval': 2.0, 'probability': 0.7, 'max_obstacles': 4},
+            'Expert': {'interval': 1.5, 'probability': 0.8, 'max_obstacles': 5}
+        }
+        
+        settings = difficulty_settings.get(level, difficulty_settings['Easy'])
+        self.spawn_interval = settings['interval']
+        self.spawn_probability = settings['probability']
+        self.max_active_obstacles = settings['max_obstacles']
+        
+        print(f"🎯 难度设置: {level} - 生成间隔: {self.spawn_interval}s")
+    
     def should_spawn_obstacle(self) -> bool:
-        """判断是否应该生成新的障碍"""
-        current_time = time.time()
-        return (current_time - self.last_spawn_time) >= self.spawn_interval
+        """判断是否应该生成新的障碍 - 支持同步时间"""
+        if self.sync_enabled:
+            # 使用同步时间
+            return (self.sync_time - self.last_spawn_time) >= self.spawn_interval
+        else:
+            # 使用系统时间（向后兼容）
+            current_time = time.time()
+            return (current_time - self.last_spawn_time) >= self.spawn_interval
     
     def spawn_obstacle(self) -> Optional[Dict]:
-        """生成新的障碍"""
+        """生成新的障碍 - 支持同步和难度"""
         if not self.should_spawn_obstacle():
             return None
         
-        current_time = time.time()
+        # 检查活跃障碍数量限制
+        if len(self.active_obstacles) >= self.max_active_obstacles:
+            return None
+            
+        # 随机决定是否生成（基于难度）
+        if random.random() > self.spawn_probability:
+            return None
+        
+        # 获取当前时间
+        current_time = self.sync_time if self.sync_enabled else time.time()
         self.last_spawn_time = current_time
         
         # 随机选择障碍类型
@@ -269,7 +320,9 @@ class ObstacleManager:
             'size': obstacle_info['size'],
             'center': obstacle_info['center'],
             'pattern': create_obstacle_pattern(obstacle_type, obstacle_info['size']),
-            'active': True
+            'active': True,
+            'blinking': False,
+            'progress': 0.0
         }
         
         self.obstacle_id_counter += 1
@@ -278,8 +331,8 @@ class ObstacleManager:
         return obstacle
     
     def update_obstacles(self) -> List[Dict]:
-        """更新障碍状态，返回活跃的障碍"""
-        current_time = time.time()
+        """更新障碍状态，返回活跃的障碍 - 支持同步时间"""
+        current_time = self.sync_time if self.sync_enabled else time.time()
         
         # 移除过期的障碍
         self.active_obstacles = [
@@ -314,7 +367,7 @@ class ObstacleManager:
         return (x_min, y_min, x_max, y_max)
     
     def check_collision(self, obstacle: Dict, landmarks: List[Keypoint]) -> Optional[Dict]:
-        """检查碰撞并返回结果"""
+        """检查碰撞并返回结果 - 增强版"""
         if not obstacle['active']:
             return None
         
@@ -363,6 +416,7 @@ class ObstacleManager:
         for obstacle in self.active_obstacles:
             if obstacle['id'] == obstacle_id:
                 obstacle['active'] = False
+                print(f"🎯 障碍物已停用: {obstacle_id}")
                 break
     
     def reset(self):
@@ -370,3 +424,20 @@ class ObstacleManager:
         self.active_obstacles.clear()
         self.obstacle_id_counter = 0
         self.last_spawn_time = 0
+        self.sync_time = 0.0
+        self.sync_enabled = False
+        print("🔄 障碍物管理器已重置")
+    
+    def get_statistics(self) -> Dict:
+        """🔄 新增：获取统计信息"""
+        return {
+            'active_count': len([obs for obs in self.active_obstacles if obs['active']]),
+            'total_spawned': self.obstacle_id_counter,
+            'sync_time': self.sync_time,
+            'sync_enabled': self.sync_enabled,
+            'difficulty': self.difficulty_level
+        }
+
+
+# 为了向后兼容，保留原有的别名
+SyncedObstacleManager = ObstacleManager
